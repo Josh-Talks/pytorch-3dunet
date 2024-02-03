@@ -1,6 +1,9 @@
 .idea
 .pytest_cache
 .ipynb_checkpoints
+.vscode
+build/
+wandb/
 
 # Byte-compiled / optimized / DLL files
 __pycache__/
