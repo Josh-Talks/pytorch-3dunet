@@ -175,7 +175,7 @@ class AdaptedRandError:
             if self.ndim_flag == "3d":
                 segm = self.input_to_segm_3d(_input)
             elif self.ndim_flag == "2d":
-                segm = self.input_to_segm_2d(_input[0])
+                segm = self.input_to_segm_2d(_input)
             else:
                 raise ValueError("Invalid ndim_flag")
             assert segm.ndim == 4
