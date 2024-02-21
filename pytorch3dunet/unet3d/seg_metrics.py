@@ -23,10 +23,14 @@ def _relabel(input):
     return unique_labels.reshape(input.shape)
 
 
-def _iou_matrix(gt, seg):
+def _iou_matrix(gt, seg, ignore_index=None):
     # relabel gt and seg for smaller memory footprint of contingency table
     gt = _relabel(gt)
     seg = _relabel(seg)
+
+    if ignore_index is not None:
+        gt[gt == ignore_index] = 0
+        seg[gt == ignore_index] = 0
 
     # get number of overlapping pixels between GT and SEG
     n_inter = contingency_table(gt, seg).A
@@ -82,10 +86,10 @@ class SegmentationMetrics:
             fp = n_seg - np.count_nonzero(detection_matrix.sum(axis=0))
 
         return {
-            'precision': precision(tp, fp, fn),
-            'recall': recall(tp, fp, fn),
-            'accuracy': accuracy(tp, fp, fn),
-            'f1': f1(tp, fp, fn)
+            "precision": precision(tp, fp, fn),
+            "recall": recall(tp, fp, fn),
+            "accuracy": accuracy(tp, fp, fn),
+            "f1": f1(tp, fp, fn),
         }
 
 
@@ -102,7 +106,7 @@ class Accuracy:
 
     def __call__(self, input_seg, gt_seg):
         metrics = SegmentationMetrics(gt_seg, input_seg).metrics(self.iou_threshold)
-        return metrics['accuracy']
+        return metrics["accuracy"]
 
 
 class AveragePrecision:
@@ -118,6 +122,6 @@ class AveragePrecision:
         # compute contingency_table
         sm = SegmentationMetrics(gt_seg, input_seg)
         # compute accuracy for each threshold
-        acc = [sm.metrics(iou)['accuracy'] for iou in self.iou_range]
+        acc = [sm.metrics(iou)["accuracy"] for iou in self.iou_range]
         # return the average
         return np.mean(acc)
