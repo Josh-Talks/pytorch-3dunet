@@ -24,13 +24,13 @@ def _relabel(input):
 
 
 def _iou_matrix(gt, seg, ignore_index=None):
+    if ignore_index is not None:
+        seg[gt == ignore_index] = 0
+        gt[gt == ignore_index] = 0
+
     # relabel gt and seg for smaller memory footprint of contingency table
     gt = _relabel(gt)
     seg = _relabel(seg)
-
-    if ignore_index is not None:
-        gt[gt == ignore_index] = 0
-        seg[gt == ignore_index] = 0
 
     # get number of overlapping pixels between GT and SEG
     n_inter = contingency_table(gt, seg).A
@@ -61,8 +61,8 @@ class SegmentationMetrics:
         seg (ndarray): predicted segmentation
     """
 
-    def __init__(self, gt, seg):
-        self.iou_matrix = _iou_matrix(gt, seg)
+    def __init__(self, gt, seg, ignore_index=None):
+        self.iou_matrix = _iou_matrix(gt, seg, ignore_index=ignore_index)
 
     def metrics(self, iou_threshold):
         """
