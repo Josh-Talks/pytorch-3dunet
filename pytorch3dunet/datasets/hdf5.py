@@ -1,7 +1,7 @@
 import glob
 import os
 from itertools import chain
-
+from typing import Optional
 import h5py
 
 import pytorch3dunet.augment.transforms as transforms
@@ -34,6 +34,7 @@ class AbstractHDF5Dataset(ConfigDataset):
     def __init__(
         self,
         file_path,
+        roi,
         phase,
         slice_builder_config,
         transformer_config,
@@ -46,10 +47,11 @@ class AbstractHDF5Dataset(ConfigDataset):
 
         self.phase = phase
         self.file_path = file_path
+        self.roi = roi
 
         input_file = self.create_h5_file(file_path)
 
-        self.raw = self.load_dataset(input_file, raw_internal_path)
+        self.raw = self.load_dataset(input_file, raw_internal_path, self.roi)
 
         stats = calculate_stats(self.raw, global_normalization)
 
@@ -86,11 +88,16 @@ class AbstractHDF5Dataset(ConfigDataset):
         logger.info(f"Number of patches: {self.patch_count}")
 
     @staticmethod
-    def load_dataset(input_file, internal_path):
+    def load_dataset(input_file, internal_path, roi: Optional[list] = None):
         assert (
             internal_path in input_file
         ), f"Internal path: {internal_path} not found in the H5 file"
-        ds = input_file[internal_path][:]
+        if roi is not None:
+            ds = input_file[internal_path][
+                roi[0][0] : roi[0][1], roi[1][0] : roi[1][1], roi[2][0] : roi[2][1]
+            ]
+        else:
+            ds = input_file[internal_path][:]
         assert ds.ndim in [
             3,
             4,
@@ -161,6 +168,7 @@ class AbstractHDF5Dataset(ConfigDataset):
         file_paths = phase_config["file_paths"]
         # file_paths may contain both files and directories; if the file_path is a directory all H5 files inside
         # are going to be included in the final file_paths
+        roi = phase_config.get("roi", None)
         file_paths = cls.traverse_h5_paths(file_paths)
 
         datasets = []
@@ -169,6 +177,7 @@ class AbstractHDF5Dataset(ConfigDataset):
                 logger.info(f"Loading {phase} set from: {file_path}...")
                 dataset = cls(
                     file_path=file_path,
+                    roi=roi,
                     phase=phase,
                     slice_builder_config=slice_builder_config,
                     transformer_config=transformer_config,
@@ -215,6 +224,7 @@ class StandardHDF5Dataset(AbstractHDF5Dataset):
     def __init__(
         self,
         file_path,
+        roi,
         phase,
         slice_builder_config,
         transformer_config,
@@ -225,6 +235,7 @@ class StandardHDF5Dataset(AbstractHDF5Dataset):
     ):
         super().__init__(
             file_path=file_path,
+            roi=roi,
             phase=phase,
             slice_builder_config=slice_builder_config,
             transformer_config=transformer_config,
