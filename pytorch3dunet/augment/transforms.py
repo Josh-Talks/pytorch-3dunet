@@ -148,20 +148,19 @@ class RandomContrast:
         self,
         random_state,
         alpha=(0.5, 1.5),
-        mean=0.0,
         execution_probability=0.1,
         **kwargs,
     ):
         self.random_state = random_state
         assert len(alpha) == 2
         self.alpha = alpha
-        self.mean = mean
         self.execution_probability = execution_probability
 
     def __call__(self, m):
         if self.random_state.uniform() < self.execution_probability:
             alpha = self.random_state.uniform(self.alpha[0], self.alpha[1])
-            result = self.mean + alpha * (m - self.mean)
+            mean = np.mean(m)
+            result = mean + alpha * (m - mean)
             return np.clip(result, -1, 1)
 
         return m
