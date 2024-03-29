@@ -270,7 +270,7 @@ class UNetTrainer:
                 )
                 self._log_stats("train", train_losses.avg, train_eval_scores.avg)
                 # self._log_params()
-                self._log_images(input, target, output, "train_")
+                # self._log_images(input, target, output, "train_")
 
             if self.should_stop():
                 return True
