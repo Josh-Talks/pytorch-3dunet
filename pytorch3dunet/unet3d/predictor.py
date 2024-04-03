@@ -17,13 +17,15 @@ from pytorch3dunet.unet3d.utils import get_logger
 logger = get_logger("UNetPredictor")
 
 
-def _get_output_file(dataset, suffix="_predictions", output_dir=None):
-    input_dir, file_name = os.path.split(dataset.file_path)
+def _get_output_file(dataset, suffix="_predictions", output_dir=None, file_name=None):
+    if file_name is None:
+        input_dir, file_name = os.path.split(dataset.file_path)
+        file_name = os.path.splitext(file_name)[0]
+    else:
+        input_dir, _ = os.path.split(dataset.file_path)
     if output_dir is None:
         output_dir = input_dir
-    output_file = os.path.join(
-        output_dir, os.path.splitext(file_name)[0] + suffix + ".h5"
-    )
+    output_file = os.path.join(output_dir, file_name + suffix + ".h5")
     return output_file
 
 
@@ -111,6 +113,7 @@ class StandardPredictor(_AbstractPredictor):
             dataset=test_loader.dataset,
             suffix=self.predictor_config.get("save_suffix", "_predictions"),
             output_dir=self.output_dir,
+            file_name=self.predictor_config.get("output_file_name", None),
         )
         h5_output_file = h5py.File(output_file, "a")
         # allocate prediction and normalization arrays
