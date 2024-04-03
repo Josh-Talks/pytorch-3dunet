@@ -174,28 +174,26 @@ class RandomGamma:
     def __init__(
         self,
         random_state,
-        gamma=(0.5, 2),
+        alpha=(0.5, 2),
         gain=1.0,
-        clip_kwargs={"a_min": 0, "a_max": 1},
         execution_probability=0.1,
+        **kwargs,
     ):
-        self.gamma = gamma
+        self.alpha = alpha
         self.gain = gain
-        self.clip_kwargs = clip_kwargs
         self.execution_probability = execution_probability
         self.random_state = random_state
 
     def __call__(self, img):
         if self.random_state.uniform() < self.execution_probability:
-            gamma = self.random_state.uniform(self.gamma[0], self.gamma[1])
+            gamma = self.random_state.uniform(self.alpha[0], self.alpha[1])
             if gamma < 0.0:
                 raise ValueError(f"Gamma must be non-negative. Got {gamma}")
             if self.gain < 0.0:
                 raise ValueError(f"Gain must be non-negative. Got {self.gain}")
             result = self.gain * (img**gamma)
-            if self.clip_kwargs:
-                return np.clip(result, **self.clip_kwargs)
-            return result
+
+            return np.clip(result, -1, 1)
 
         return img
 
@@ -208,18 +206,19 @@ class RandomBrightness:
     def __init__(
         self,
         random_state,
-        shift=(0, 1.0),
+        alpha=(0, 1.0),
         execution_probability=0.1,
-        clip_kwargs={"a_min": 0, "a_max": 1},
+        clip_kwargs={"a_min": -1, "a_max": 1},
+        **kwargs,
     ):
         self.random_state = random_state
-        self.shift = shift
+        self.alpha = alpha
         self.clip_kwargs = clip_kwargs
         self.execution_probability = execution_probability
 
     def __call__(self, img):
         if self.random_state.uniform() < self.execution_probability:
-            shift = self.random_state.uniform(self.shift[0], self.shift[1])
+            shift = self.random_state.uniform(self.alpha[0], self.alpha[1])
             result = img + shift
             if self.clip_kwargs:
                 return np.clip(result, **self.clip_kwargs)
