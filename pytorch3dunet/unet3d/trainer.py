@@ -1,4 +1,6 @@
 import os
+import time
+import wandb
 import torch
 import torch.nn as nn
 from torch.optim.lr_scheduler import ReduceLROnPlateau
@@ -214,11 +216,17 @@ class UNetTrainer:
                 f"Training iteration [{self.num_iterations}/{self.max_num_iterations}]. "
                 f"Epoch [{self.num_epochs}/{self.max_num_epochs - 1}]"
             )
-
+            iter_start_time = time.time()
             input, target, weight = self._split_training_batch(t)
-
+            loader_time = time.time()
+            wandb.log(
+                {"loader_time": loader_time - iter_start_time}, step=self.num_iterations
+            )
             output, loss = self._forward_pass(input, target, weight)
-
+            fwd_pass_time = time.time()
+            wandb.log(
+                {"fwd_pass_time": fwd_pass_time - loader_time}, step=self.num_iterations
+            )
             train_losses.update(loss.item(), self._batch_size(input))
 
             # compute gradients and update parameters
@@ -227,10 +235,16 @@ class UNetTrainer:
             self.optimizer.step()
 
             if self.num_iterations % self.validate_after_iters == 0:
+                val_start_time = time.time()
                 # set the model in eval mode
                 self.model.eval()
                 # evaluate on validation set
                 eval_score = self.validate()
+                val_end_time = time.time()
+                wandb.log(
+                    {"val_time": val_end_time - val_start_time},
+                    step=self.num_iterations,
+                )
                 # set the model back to training mode
                 self.model.train()
 
@@ -241,7 +255,11 @@ class UNetTrainer:
                     self.scheduler.step()
 
                 # log current learning rate in tensorboard
-                self._log_lr()
+                # self._log_lr()
+                wandb.log(
+                    {"learning_rate": self.optimizer.param_groups[0]["lr"]},
+                    step=self.num_iterations,
+                )
                 # remember best validation metric
                 is_best = self._is_best_eval_score(eval_score)
 
@@ -268,7 +286,14 @@ class UNetTrainer:
                 logger.info(
                     f"Training stats. Loss: {train_losses.avg}. Evaluation score: {train_eval_scores.avg}"
                 )
-                self._log_stats("train", train_losses.avg, train_eval_scores.avg)
+                # self._log_stats("train", train_losses.avg, train_eval_scores.avg)
+                wandb.log(
+                    {
+                        "train_loss_avg": train_losses.avg,
+                        "train_eval_score_avg": train_eval_scores.avg,
+                    },
+                    step=self.num_iterations,
+                )
                 # self._log_params()
                 # self._log_images(input, target, output, "train_")
 
@@ -276,6 +301,12 @@ class UNetTrainer:
                 return True
 
             self.num_iterations += 1
+
+            iter_end_time = time.time()
+            wandb.log(
+                {"time_for_iteration": iter_end_time - iter_start_time},
+                step=self.num_iterations,
+            )
 
         return False
 
@@ -314,7 +345,30 @@ class UNetTrainer:
                 val_losses.update(loss.item(), self._batch_size(input))
 
                 if i % 100 == 0:
-                    self._log_images(input, target, output, "val_")
+                    raw_image = wandb.Image(input.cpu().numpy()[0], caption="raw_image")
+                    wandb.log({"validation_raw": raw_image}, step=self.num_iterations)
+                    prediction_image = wandb.Image(
+                        output.cpu().numpy()[0], caption="prediction_image"
+                    )
+                    wandb.log(
+                        {"validation_prediction": prediction_image},
+                        step=self.num_iterations,
+                    )
+                    target_image = wandb.Image(
+                        target.cpu().numpy()[0][0], caption="target_boundary_image"
+                    )
+                    wandb.log(
+                        {"validation_target_boundary": target_image},
+                        step=self.num_iterations,
+                    )
+                    target_instance_image = wandb.Image(
+                        target.cpu().numpy()[0][1], caption="target_instance_image"
+                    )
+                    wandb.log(
+                        {"validation_target_instance": target_instance_image},
+                        step=self.num_iterations,
+                    )
+                    # self._log_images(input, target, output, "val_")
 
                 eval_score = self.eval_criterion(output, target)
                 val_scores.update(eval_score.item(), self._batch_size(input))
@@ -323,7 +377,11 @@ class UNetTrainer:
                     # stop validation
                     break
 
-            self._log_stats("val", val_losses.avg, val_scores.avg)
+            # self._log_stats("val", val_losses.avg, val_scores.avg)
+            wandb.log(
+                {"val_loss_avg": val_losses.avg, "val_eval_score_avg": val_scores.avg},
+                step=self.num_iterations,
+            )
             logger.info(
                 f"Validation finished. Loss: {val_losses.avg}. Evaluation score: {val_scores.avg}"
             )

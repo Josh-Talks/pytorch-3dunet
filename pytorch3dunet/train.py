@@ -18,7 +18,7 @@ def main():
         project=config["wandb"]["project"],
         name=config["wandb"]["name"],
         config=config,
-        sync_tensorboard=True,
+        # sync_tensorboard=True,
     )
     logger.info(config)
 
