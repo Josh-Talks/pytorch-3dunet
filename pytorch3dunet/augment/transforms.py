@@ -9,8 +9,8 @@ from skimage.filters import gaussian
 from skimage.segmentation import find_boundaries
 
 # WARN: use fixed random state for reproducibility; if you want to randomize on each run seed with `time.time()` e.g.
-# GLOBAL_RANDOM_STATE = np.random.RandomState(47)
-GLOBAL_RANDOM_STATE = np.random.RandomState(int(time.time()))
+GLOBAL_RANDOM_STATE = np.random.RandomState(47)
+# GLOBAL_RANDOM_STATE = np.random.RandomState(int(time.time()))
 
 
 class Compose(object):
