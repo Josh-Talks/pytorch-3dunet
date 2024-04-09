@@ -127,6 +127,7 @@ class UNetTrainer:
         skip_train_validation=False,
         resume=None,
         pre_trained=None,
+        timer=False,
         **kwargs,
     ):
 
@@ -143,6 +144,7 @@ class UNetTrainer:
         self.log_after_iters = log_after_iters
         self.validate_iters = validate_iters
         self.eval_score_higher_is_better = eval_score_higher_is_better
+        self.timer = timer
 
         logger.info(model)
         logger.info(f"eval_score_higher_is_better: {eval_score_higher_is_better}")
@@ -212,21 +214,31 @@ class UNetTrainer:
         self.model.train()
 
         for t in self.loaders["train"]:
+            if self.timer == True:
+                iter_start_time = time.time()
+                if self.num_iterations > 1:
+                    wandb.log(
+                        {"time_between_iterations": iter_start_time - iter_end_time},
+                        step=self.num_iterations,
+                    )
             logger.info(
                 f"Training iteration [{self.num_iterations}/{self.max_num_iterations}]. "
                 f"Epoch [{self.num_epochs}/{self.max_num_epochs - 1}]"
             )
-            iter_start_time = time.time()
             input, target, weight = self._split_training_batch(t)
-            loader_time = time.time()
-            wandb.log(
-                {"loader_time": loader_time - iter_start_time}, step=self.num_iterations
-            )
+            if self.timer == True:
+                loader_time = time.time()
+                wandb.log(
+                    {"loader_time": loader_time - iter_start_time},
+                    step=self.num_iterations,
+                )
             output, loss = self._forward_pass(input, target, weight)
-            fwd_pass_time = time.time()
-            wandb.log(
-                {"fwd_pass_time": fwd_pass_time - loader_time}, step=self.num_iterations
-            )
+            if self.timer == True:
+                fwd_pass_time = time.time()
+                wandb.log(
+                    {"fwd_pass_time": fwd_pass_time - loader_time},
+                    step=self.num_iterations,
+                )
             train_losses.update(loss.item(), self._batch_size(input))
 
             # compute gradients and update parameters
@@ -235,16 +247,18 @@ class UNetTrainer:
             self.optimizer.step()
 
             if self.num_iterations % self.validate_after_iters == 0:
-                val_start_time = time.time()
+                if self.timer == True:
+                    val_start_time = time.time()
                 # set the model in eval mode
                 self.model.eval()
                 # evaluate on validation set
                 eval_score = self.validate()
-                val_end_time = time.time()
-                wandb.log(
-                    {"val_time": val_end_time - val_start_time},
-                    step=self.num_iterations,
-                )
+                if self.timer == True:
+                    val_end_time = time.time()
+                    wandb.log(
+                        {"val_time": val_end_time - val_start_time},
+                        step=self.num_iterations,
+                    )
                 # set the model back to training mode
                 self.model.train()
 
@@ -302,11 +316,12 @@ class UNetTrainer:
 
             self.num_iterations += 1
 
-            iter_end_time = time.time()
-            wandb.log(
-                {"time_for_iteration": iter_end_time - iter_start_time},
-                step=self.num_iterations,
-            )
+            if self.timer == True:
+                iter_end_time = time.time()
+                wandb.log(
+                    {"time_for_iteration": iter_end_time - iter_start_time},
+                    step=self.num_iterations,
+                )
 
         return False
 
