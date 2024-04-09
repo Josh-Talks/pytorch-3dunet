@@ -149,19 +149,23 @@ class RandomContrast:
         random_state,
         alpha=(0.5, 1.5),
         execution_probability=0.1,
+        clip_kwargs={"a_min": -1, "a_max": 1},
         **kwargs,
     ):
         self.random_state = random_state
         assert len(alpha) == 2
         self.alpha = alpha
         self.execution_probability = execution_probability
+        self.clip_kwargs = clip_kwargs
 
     def __call__(self, m):
         if self.random_state.uniform() < self.execution_probability:
             alpha = self.random_state.uniform(self.alpha[0], self.alpha[1])
             mean = np.mean(m)
             result = mean + alpha * (m - mean)
-            return np.clip(result, -1, 1)
+            if self.clip_kwargs:
+                return np.clip(result, **self.clip_kwargs)
+            return result
 
         return m
 
@@ -176,6 +180,7 @@ class RandomGamma:
         random_state,
         alpha=(0.5, 2),
         gain=1.0,
+        clip_kwargs={"a_min": -1, "a_max": 1},
         execution_probability=0.1,
         **kwargs,
     ):
@@ -183,6 +188,7 @@ class RandomGamma:
         self.gain = gain
         self.execution_probability = execution_probability
         self.random_state = random_state
+        self.clip_kwargs = clip_kwargs
 
     def __call__(self, img):
         if self.random_state.uniform() < self.execution_probability:
@@ -192,8 +198,9 @@ class RandomGamma:
             if self.gain < 0.0:
                 raise ValueError(f"Gain must be non-negative. Got {self.gain}")
             result = self.gain * (img**gamma)
-
-            return np.clip(result, -1, 1)
+            if self.clip_kwargs:
+                return np.clip(result, **self.clip_kwargs)
+            return result
 
         return img
 
@@ -727,22 +734,37 @@ class Standardize:
 
 
 class PercentileNormalizer:
-    def __init__(self, pmin=1, pmax=99.6, channelwise=False, eps=1e-10, **kwargs):
+    def __init__(
+        self,
+        pmin=None,
+        pmax=None,
+        percentile_min=1,
+        percentile_max=99.6,
+        channelwise=False,
+        eps=1e-10,
+        **kwargs,
+    ):
         self.eps = eps
         self.pmin = pmin
         self.pmax = pmax
+        self.percentile_min = percentile_min
+        self.percentile_max = percentile_max
         self.channelwise = channelwise
 
     def __call__(self, m):
-        if self.channelwise:
-            axes = list(range(m.ndim))
-            # average across channels
-            axes = tuple(axes[1:])
-            pmin = np.percentile(m, self.pmin, axis=axes, keepdims=True)
-            pmax = np.percentile(m, self.pmax, axis=axes, keepdims=True)
+        if (self.pmin) is not None:
+            assert self.pmax is not None, "pmax must be provided"
+            pmin, pmax = self.pmin, self.pmax
         else:
-            pmin = np.percentile(m, self.pmin)
-            pmax = np.percentile(m, self.pmax)
+            if self.channelwise:
+                axes = list(range(m.ndim))
+                # average across channels
+                axes = tuple(axes[1:])
+                pmin = np.percentile(m, self.percentile_min, axis=axes, keepdims=True)
+                pmax = np.percentile(m, self.percentile_max, axis=axes, keepdims=True)
+            else:
+                pmin = np.percentile(m, self.percentile_min)
+                pmax = np.percentile(m, self.percentile_max)
 
         return (m - pmin) / (pmax - pmin + self.eps)
 
