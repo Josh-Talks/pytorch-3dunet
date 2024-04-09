@@ -17,6 +17,7 @@ def main():
     wandb.init(
         project=config["wandb"]["project"],
         name=config["wandb"]["name"],
+        mode=config["wandb"]["mode"],
         config=config,
         # sync_tensorboard=True,
     )
