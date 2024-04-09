@@ -42,6 +42,7 @@ class AbstractHDF5Dataset(ConfigDataset):
         label_internal_path="label",
         weight_internal_path=None,
         global_normalization=True,
+        global_percentiles=None,
     ):
         assert phase in ["train", "val", "test"]
 
@@ -53,7 +54,15 @@ class AbstractHDF5Dataset(ConfigDataset):
 
         self.raw = self.load_dataset(input_file, raw_internal_path, self.roi)
 
-        stats = calculate_stats(self.raw, global_normalization)
+        if global_percentiles is not None:
+            stats = calculate_stats(
+                self.raw,
+                global_normalization,
+                global_percentiles[0],
+                global_percentiles[1],
+            )
+        else:
+            stats = calculate_stats(self.raw, global_normalization)
 
         self.transformer = transforms.Transformer(transformer_config, stats)
         self.raw_transform = self.transformer.raw_transform()
@@ -191,6 +200,7 @@ class AbstractHDF5Dataset(ConfigDataset):
                     global_normalization=dataset_config.get(
                         "global_normalization", None
                     ),
+                    global_percentiles=dataset_config.get("global_percentiles", None),
                 )
                 datasets.append(dataset)
             except Exception:
@@ -232,6 +242,7 @@ class StandardHDF5Dataset(AbstractHDF5Dataset):
         label_internal_path="label",
         weight_internal_path=None,
         global_normalization=True,
+        global_percentiles=None,
     ):
         super().__init__(
             file_path=file_path,
@@ -243,6 +254,7 @@ class StandardHDF5Dataset(AbstractHDF5Dataset):
             label_internal_path=label_internal_path,
             weight_internal_path=weight_internal_path,
             global_normalization=global_normalization,
+            global_percentiles=global_percentiles,
         )
 
     @staticmethod
