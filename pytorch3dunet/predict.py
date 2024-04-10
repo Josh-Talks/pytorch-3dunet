@@ -2,6 +2,7 @@ import importlib
 import os
 
 import torch
+import wandb
 import torch.nn as nn
 
 from pytorch3dunet.datasets.utils import get_test_loaders
@@ -22,9 +23,14 @@ def get_predictor(model, output_dir, config):
     return predictor_class(model, output_dir, config, **predictor_config)
 
 
-def main():
-    # Load configuration
-    config, _ = load_config()
+def predict(config):
+    # setup wandb logging
+    wandb.init(
+        project=config["wandb"]["project"],
+        name=config["wandb"]["name"],
+        mode=config["wandb"]["mode"],
+        config=config,
+    )
 
     # Create the model
     model = get_model(config["model"])
@@ -55,4 +61,6 @@ def main():
 
 
 if __name__ == "__main__":
-    main()
+    # Load configuration
+    config, _ = load_config()
+    predict(config)
