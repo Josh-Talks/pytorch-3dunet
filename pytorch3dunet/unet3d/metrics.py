@@ -286,7 +286,6 @@ class BoundaryAdaptedRandError(AdaptedRandError):
 
         segs = []
         for predictions in input:
-
             for th in self.thresholds:
                 segs_channel = []
                 for slice in predictions:
