@@ -332,3 +332,151 @@ def dsb_save_batch(output_dir, path, pred, save_segmentation=True, pmaps_thersho
                 f.create_dataset(
                     "segmentation", data=_pmaps_to_seg(single_pred), compression="gzip"
                 )
+
+
+class PatchWisePredictor(_AbstractPredictor):
+    """
+    Applies the model on the given dataset and saves the result as H5 file.
+    Predictions from the network are kept in memory. If the results from the network don't fit in into RAM
+    use `LazyPredictor` instead. the predictions are saved patchwise in a 5D array (number_patches, C, D, H, W)
+
+    The output dataset names inside the H5 is given by `dest_dataset_name` config argument. If the argument is
+    not present in the config 'predictions' is used as a default dataset name.
+
+    Args:
+        model (Unet3D): trained 3D UNet model used for prediction
+        output_dir (str): path to the output directory (optional)
+        config (dict): global config dict
+    """
+
+    def __init__(self, model, output_dir, config, **kwargs):
+        super().__init__(model, output_dir, config, **kwargs)
+
+    def __call__(self, test_loader):
+        assert isinstance(test_loader.dataset, AbstractHDF5Dataset)
+        logger.info(f"Processing '{test_loader.dataset.file_path}'...")
+        start = time.time()
+
+        prediction_channel = self.config.get("prediction_channel", None)
+        if prediction_channel is not None:
+            logger.info(
+                f"Saving only channel '{prediction_channel}' from the network output"
+            )
+
+        logger.info(f"Running inference on {len(test_loader)} batches")
+
+        # dimensionality of the output predictions
+        # volume_shape = self.volume_shape(test_loader.dataset)
+        patch_count = test_loader.dataset.__len__()
+        # get patch shape
+        patch_shape = self.config["loaders"]["test"]["slice_builder"]["patch_shape"]
+        out_channels = self.config["model"].get("out_channels")
+        if prediction_channel is None:
+            prediction_maps_shape = (patch_count, out_channels, *patch_shape)
+        else:
+            # single channel prediction map
+            prediction_maps_shape = (patch_count, 1, *patch_shape)
+
+        logger.info(
+            f"The shape of the output prediction maps (Number of patches, C, D, H, W): {prediction_maps_shape}"
+        )
+
+        # evey patch will be mirror-padded with the following halo
+        patch_halo = self.predictor_config.get("patch_halo", (4, 4, 4))
+        if _is_2d_model(self.model):
+            patch_halo = list(patch_halo)
+            patch_halo[0] = 0
+
+        # create destination H5 file
+        output_file = _get_output_file(
+            dataset=test_loader.dataset,
+            suffix=self.predictor_config.get("save_suffix", "_predictions"),
+            output_dir=self.output_dir,
+            file_name=self.predictor_config.get("output_file_name", None),
+        )
+        h5_output_file = h5py.File(output_file, "a")
+        # allocate prediction and normalization arrays
+        logger.info("Allocating prediction arrays...")
+        # initialize the output prediction arrays
+        prediction_map = np.zeros(prediction_maps_shape, dtype="float32")
+        patch_indices = []
+
+        # Sets the module in evaluation mode explicitly
+        # It is necessary for batchnorm/dropout layers if present as well as final Sigmoid/Softmax to be applied
+        self.model.eval()
+        # Run predictions on the entire input dataset
+        with torch.no_grad():
+            for i, (input, indices) in enumerate(tqdm(test_loader)):
+                # send batch to gpu
+                if torch.cuda.is_available():
+                    input = input.cuda(non_blocking=True)
+
+                input = _pad(input, patch_halo)
+
+                if _is_2d_model(self.model):
+                    # remove the singleton z-dimension from the input
+                    input = torch.squeeze(input, dim=-3)
+                    # forward pass
+                    prediction = self.model(input)
+                    # add the singleton z-dimension to the output
+                    prediction = torch.unsqueeze(prediction, dim=-3)
+                else:
+                    # forward pass
+                    prediction = self.model(input)
+
+                # unpad
+                prediction = _unpad(prediction, patch_halo)
+                # convert to numpy array
+                prediction = prediction.cpu().numpy()
+                # for each batch sample
+                for j, (pred, patch_index) in enumerate(zip(prediction, indices)):
+                    # save patch index: (C,D,H,W)
+                    if prediction_channel is None:
+                        channel_slice = slice(0, out_channels)
+                    else:
+                        # use only the specified channel
+                        channel_slice = slice(0, 1)
+                        pred = np.expand_dims(pred[prediction_channel], axis=0)
+
+                    patch_count_slice = slice(
+                        i * test_loader.batch_size + j,
+                        ((i * test_loader.batch_size) + j + 1),
+                    )
+                    # add channel dimension to the index
+                    index = (
+                        patch_count_slice,
+                        channel_slice,
+                    )
+                    pred = np.expand_dims(pred, axis=0)
+                    # accumulate probabilities into the output prediction array
+                    prediction_map[*index] = pred
+                    patch_indices.append(
+                        [
+                            [patch_index[0].start, patch_index[0].stop],
+                            [patch_index[1].start, patch_index[1].stop],
+                            [patch_index[2].start, patch_index[2].stop],
+                        ]
+                    )
+
+        logger.info(f"Finished inference in {time.time() - start:.2f} seconds")
+        # save results
+        logger.info(f"Saving predictions to: {output_file}")
+        self._save_results(prediction_map, patch_indices, h5_output_file)
+        # close the output H5 file
+        h5_output_file.close()
+
+    def _save_results(self, prediction_map, patch_indices, output_file):
+        dataset_name = _get_dataset_name(self.config)
+        output_file.create_dataset(
+            dataset_name,
+            data=prediction_map,
+            compression="gzip",
+        )
+        patch_index_dataset_name = self.config.get(
+            "patch_index_dataset_name", "patch_index"
+        )
+        output_file.create_dataset(
+            patch_index_dataset_name,
+            data=np.array(patch_indices),
+            compression="gzip",
+        )
