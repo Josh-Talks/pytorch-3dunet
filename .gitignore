@@ -1,14 +1,17 @@
 .idea
 .pytest_cache
 .ipynb_checkpoints
+.vscode
 
 # Byte-compiled / optimized / DLL files
 __pycache__/
 *.py[cod]
 *$py.class
 
-# Tensorboard logs
+
+# logging
 logs/
+*wandb/
 
 # PyTorch models
 *.pytorch
@@ -16,3 +19,4 @@ logs/
 # Python packages
 pytorch3dunet.egg-info/
 dist/
+build/
