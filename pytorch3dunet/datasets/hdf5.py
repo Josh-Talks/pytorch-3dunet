@@ -2,7 +2,6 @@ import glob
 import os
 from abc import abstractmethod
 from itertools import chain
-
 import h5py
 
 import pytorch3dunet.augment.transforms as transforms
@@ -46,12 +45,13 @@ class AbstractHDF5Dataset(ConfigDataset):
         global_normalization (bool): if True, the mean and std of the raw data will be calculated over the whole dataset
     """
 
-    def __init__(self, file_path, phase, slice_builder_config, transformer_config, raw_internal_path='raw',
+    def __init__(self, file_path, roi, phase, slice_builder_config, transformer_config, raw_internal_path='raw',
                  label_internal_path='label', weight_internal_path=None, global_normalization=True):
         assert phase in ['train', 'val', 'test']
 
         self.phase = phase
         self.file_path = file_path
+        self.roi = roi
         self.raw_internal_path = raw_internal_path
         self.label_internal_path = label_internal_path
         self.weight_internal_path = weight_internal_path
@@ -93,9 +93,18 @@ class AbstractHDF5Dataset(ConfigDataset):
                                f'performance, but found patch_shape: {patch_shape} and stride_shape: {stride_shape}!')
 
         with h5py.File(file_path, 'r') as f:
-            raw = f[raw_internal_path]
-            label = f[label_internal_path] if phase != 'test' else None
-            weight_map = f[weight_internal_path] if weight_internal_path is not None else None
+            if self.roi is not None:
+                raw = f[raw_internal_path][
+                        roi[0][0] : roi[0][1], 
+                        roi[1][0] : roi[1][1], 
+                        roi[2][0] : roi[2][1]
+                        ]
+                label = f[label_internal_path][roi[0][0] : roi[0][1], roi[1][0] : roi[1][1], roi[2][0] : roi[2][1]] if phase != 'test' else None
+                weight_map = f[weight_internal_path][roi[0][0] : roi[0][1], roi[1][0] : roi[1][1], roi[2][0] : roi[2][1]] if weight_internal_path is not None else None
+            else:
+                raw = f[raw_internal_path]
+                label = f[label_internal_path] if phase != 'test' else None
+                weight_map = f[weight_internal_path] if weight_internal_path is not None else None
             # build slice indices for raw and label data sets
             slice_builder = get_slice_builder(raw, label, weight_map, slice_builder_config)
             self.raw_slices = slice_builder.raw_slices
@@ -191,12 +200,14 @@ class AbstractHDF5Dataset(ConfigDataset):
         # file_paths may contain both files and directories; if the file_path is a directory all H5 files inside
         # are going to be included in the final file_paths
         file_paths = traverse_h5_paths(file_paths)
+        roi = phase_config.get('roi', None)
 
         datasets = []
         for file_path in file_paths:
             try:
                 logger.info(f'Loading {phase} set from: {file_path}...')
                 dataset = cls(file_path=file_path,
+                              roi=roi,
                               phase=phase,
                               slice_builder_config=slice_builder_config,
                               transformer_config=transformer_config,
@@ -216,10 +227,10 @@ class StandardHDF5Dataset(AbstractHDF5Dataset):
     Fast but might consume a lot of memory.
     """
 
-    def __init__(self, file_path, phase, slice_builder_config, transformer_config,
+    def __init__(self, file_path, roi, phase, slice_builder_config, transformer_config,
                  raw_internal_path='raw', label_internal_path='label', weight_internal_path=None,
                  global_normalization=True):
-        super().__init__(file_path=file_path, phase=phase, slice_builder_config=slice_builder_config,
+        super().__init__(file_path=file_path, roi=roi, phase=phase, slice_builder_config=slice_builder_config,
                          transformer_config=transformer_config, raw_internal_path=raw_internal_path,
                          label_internal_path=label_internal_path, weight_internal_path=weight_internal_path,
                          global_normalization=global_normalization)
