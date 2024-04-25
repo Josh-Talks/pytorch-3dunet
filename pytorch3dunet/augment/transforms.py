@@ -1,6 +1,6 @@
 import importlib
 import random
-
+import time
 import numpy as np
 import torch
 from scipy.ndimage import rotate, map_coordinates, gaussian_filter, convolve
@@ -10,7 +10,7 @@ from skimage.segmentation import find_boundaries
 
 # WARN: use fixed random state for reproducibility; if you want to randomize on each run seed with `time.time()` e.g.
 GLOBAL_RANDOM_STATE = np.random.RandomState(47)
-
+#GLOBAL_RANDOM_STATE = np.random.RandomState(int(time.time()))
 
 class Compose(object):
     def __init__(self, transforms):
@@ -132,6 +132,68 @@ class RandomContrast:
 
         return m
 
+
+class RandomGamma:
+    """
+    Adjust contrast by non-liner transformation raising image value to power gamma.
+    """
+
+    def __init__(
+        self,
+        random_state,
+        gamma=(0.5, 2),
+        gain=1.0,
+        clip_kwargs={"a_min": 0, "a_max": 1},
+        execution_probability=0.1,
+    ):
+        self.gamma = gamma
+        self.gain = gain
+        self.clip_kwargs = clip_kwargs
+        self.execution_probability = execution_probability
+        self.random_state = random_state
+
+    def __call__(self, img):
+        if self.random_state.uniform() < self.execution_probability:
+            gamma = self.random_state.uniform(self.gamma[0], self.gamma[1])
+            if gamma < 0.0:
+                raise ValueError(f"Gamma must be non-negative. Got {gamma}")
+            if self.gain < 0.0:
+                raise ValueError(f"Gain must be non-negative. Got {self.gain}")
+            result = self.gain * (img**gamma)
+            if self.clip_kwargs:
+                return np.clip(result, **self.clip_kwargs)
+            return result
+
+        return img
+
+
+class RandomBrightness:
+    """
+    Adjust brightness by adding a random value to image.
+    """
+
+    def __init__(
+        self,
+        random_state,
+        shift=(0, 1.0),
+        execution_probability=0.1,
+        clip_kwargs={"a_min": 0, "a_max": 1},
+    ):
+        self.random_state = random_state
+        self.shift = shift
+        self.clip_kwargs = clip_kwargs
+        self.execution_probability = execution_probability
+
+    def __call__(self, img):
+        if self.random_state.uniform() < self.execution_probability:
+            shift = self.random_state.uniform(self.shift[0], self.shift[1])
+            result = img + shift
+            if self.clip_kwargs:
+                return np.clip(result, **self.clip_kwargs)
+            return result
+
+        return img
+    
 
 # it's relatively slow, i.e. ~1s per patch of size 64x200x200, so use multiple workers in the DataLoader
 # remember to use spline_order=0 when transforming the labels
