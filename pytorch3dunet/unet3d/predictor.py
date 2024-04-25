@@ -165,8 +165,18 @@ class StandardPredictor(_AbstractPredictor):
         result = prediction_map / normalization_mask
         if self.save_segmentation:
             result = np.argmax(result, axis=0).astype('uint16')
-        output_file.create_dataset(self.output_dataset, data=result, compression="gzip")
-
+        if self.output_dataset in output_file:
+            output_file[self.output_dataset].resize(
+                (output_file[self.output_dataset].shape[0] + result.shape[0]), axis=0
+            )
+            output_file[self.output_dataset][-result.shape[0] :] = result
+        else:
+            output_file.create_dataset(
+                self.output_dataset,
+                data=result,
+                compression="gzip",
+                maxshape=(None, None, None, None),
+            )
 
 class LazyPredictor(StandardPredictor):
     """
