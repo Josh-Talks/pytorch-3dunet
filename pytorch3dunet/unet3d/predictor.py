@@ -2,7 +2,7 @@ import os
 import time
 from concurrent import futures
 from pathlib import Path
-
+from typing import Optional
 import h5py
 import numpy as np
 import torch
@@ -18,11 +18,15 @@ from pytorch3dunet.unet3d.utils import get_logger
 logger = get_logger('UNetPredictor')
 
 
-def _get_output_file(dataset, suffix='_predictions', output_dir=None):
-    input_dir, file_name = os.path.split(dataset.file_path)
+def _get_output_file(dataset, suffix='_predictions', output_dir=None, file_name=None):
+    if file_name is None:
+        input_dir, file_name = os.path.split(dataset.file_path)
+        file_name = os.path.splitext(file_name)[0]
+    else:
+        input_dir, _ = os.path.split(dataset.file_path)
     if output_dir is None:
         output_dir = input_dir
-    output_filename = os.path.splitext(file_name)[0] + suffix + '.h5'
+    output_filename = file_name + suffix + '.h5'
     return Path(output_dir) / output_filename
 
 
@@ -40,6 +44,8 @@ class _AbstractPredictor:
                  output_dataset: str = 'predictions',
                  save_segmentation: bool = False,
                  prediction_channel: int = None,
+                 save_suffix: str = '_predictions',
+                 output_file_name: Optional[str] = None,
                  **kwargs):
         """
         Base class for predictors.
@@ -57,6 +63,9 @@ class _AbstractPredictor:
         self.output_dataset = output_dataset
         self.save_segmentation = save_segmentation
         self.prediction_channel = prediction_channel
+        self.save_suffix = save_suffix
+        self.output_file_name = output_file_name
+
 
     def __call__(self, test_loader):
         raise NotImplementedError
@@ -78,9 +87,11 @@ class StandardPredictor(_AbstractPredictor):
                  output_dataset: str = 'predictions',
                  save_segmentation: bool = False,
                  prediction_channel: int = None,
+                 save_suffix: str = '_predictions',
+                 output_file_name: Optional[str] = None,
                  **kwargs):
         super().__init__(model, output_dir, out_channels, output_dataset, save_segmentation, prediction_channel,
-                         **kwargs)
+                         save_suffix, output_file_name, **kwargs)
 
     def __call__(self, test_loader):
         assert isinstance(test_loader.dataset, AbstractHDF5Dataset)
@@ -97,7 +108,12 @@ class StandardPredictor(_AbstractPredictor):
             prediction_maps_shape = (self.out_channels,) + volume_shape
 
         # create destination H5 file
-        output_file = _get_output_file(dataset=test_loader.dataset, output_dir=self.output_dir)
+        output_file = _get_output_file(
+            dataset=test_loader.dataset, 
+            suffix=self.save_suffix,
+            output_dir=self.output_dir,
+            file_name=self.output_file_name
+        )
         with h5py.File(output_file, 'w') as h5_output_file:
             # allocate prediction and normalization arrays
             logger.info('Allocating prediction and normalization arrays...')
