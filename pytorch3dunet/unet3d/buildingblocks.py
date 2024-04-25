@@ -76,6 +76,35 @@ def create_conv(in_channels, out_channels, kernel_size, order, num_groups, paddi
                 modules.append(('batchnorm', bn(in_channels)))
             else:
                 modules.append(('batchnorm', bn(out_channels)))
+        elif char == "i":
+            is_before_conv = i < order.index("c")
+            if is3d:
+                inorm = nn.InstanceNorm3d
+            else:
+                inorm = nn.InstanceNorm2d
+
+            if is_before_conv:
+                modules.append(
+                    (
+                        "instance_norm",
+                        inorm(
+                            num_features=in_channels,
+                            affine=True,
+                            track_running_stats=True,
+                        ),
+                    )
+                )
+            else:
+                modules.append(
+                    (
+                        "instance_norm",
+                        inorm(
+                            num_features=out_channels,
+                            affine=True,
+                            track_running_stats=True,
+                        ),
+                    )
+                )
         elif char == 'd':
             modules.append(('dropout', nn.Dropout(p=dropout_prob)))
         elif char == 'D':
