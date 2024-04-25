@@ -1,5 +1,5 @@
 import random
-
+import wandb
 import torch
 
 from pytorch3dunet.unet3d.config import load_config, copy_config
@@ -12,6 +12,13 @@ logger = get_logger('TrainingSetup')
 def main():
     # Load and log experiment configuration
     config, config_path = load_config()
+    # Setup wandb logger
+    wandb.init(
+        project=config["wandb"]["project"],
+        name=config["wandb"]["name"],
+        config=config,
+        sync_tensorboard=True,
+    )
     logger.info(config)
 
     manual_seed = config.get('manual_seed', None)
