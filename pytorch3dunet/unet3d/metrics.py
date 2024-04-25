@@ -117,9 +117,10 @@ class AdaptedRandError:
         use_last_target (bool): if true, use the last channel from the target to compute the ARand, otherwise the first.
     """
 
-    def __init__(self, use_last_target=False, ignore_index=None, **kwargs):
+    def __init__(self, use_last_target=False, ignore_index=None, ndim_flag: str = "3d", **kwargs):
         self.use_last_target = use_last_target
         self.ignore_index = ignore_index
+        self.ndim_flag = ndim_flag
 
     def __call__(self, input, target):
         """
@@ -155,7 +156,12 @@ class AdaptedRandError:
                 continue
 
             # convert _input to segmentation CDHW
-            segm = self.input_to_segm(_input)
+            if self.ndim_flag == "3d":
+                segm = self.input_to_segm_3d(_input)
+            elif self.ndim_flag == "2d":
+                segm = self.input_to_segm_2d(_input[0])
+            else:
+                raise ValueError("Invalid ndim_flag")
             assert segm.ndim == 4
 
             # compute per channel arand and return the minimum value
@@ -167,11 +173,22 @@ class AdaptedRandError:
         logger.info(f'ARand: {mean_arand.item()}')
         return mean_arand
 
-    def input_to_segm(self, input):
+    def input_to_segm_3d(self, input):
         """
         Converts input tensor (output from the network) to the segmentation image. E.g. if the input is the boundary
         pmaps then one option would be to threshold it and run connected components in order to return the segmentation.
 
+        :param input: 4D tensor (CDHW)
+        :return: segmentation volume either 4D (segmentation per channel)
+        """
+        # by deafult assume that input is a segmentation volume itself
+        return input
+    
+    def input_to_segm_2d(self, input):
+        """
+        Converts input tensor (output from the network) to the segmentation image. E.g. if the input is the boundary
+        pmaps then one option would be to threshold it and run connected components in order to return the segmentation.
+        considers input volume slice by slice (in a 2d fashion) when running connected components.
         :param input: 4D tensor (CDHW)
         :return: segmentation volume either 4D (segmentation per channel)
         """
@@ -197,7 +214,7 @@ class BoundaryAdaptedRandError(AdaptedRandError):
         self.input_channel = input_channel
         self.invert_pmaps = invert_pmaps
 
-    def input_to_segm(self, input):
+    def input_to_segm_3d(self, input):
         if self.input_channel is not None:
             input = np.expand_dims(input[self.input_channel], axis=0)
 
@@ -217,6 +234,41 @@ class BoundaryAdaptedRandError(AdaptedRandError):
                 seg = measure.label(predictions_th, background=0, connectivity=1)
                 segs.append(seg)
 
+        return np.stack(segs)
+    
+    def input_to_segm_2d(self, input):
+        """Converts input probability maps to segmentation volume
+        Args:
+            input (_type_): 4D tensor (CDHW) of probability maps
+            thresholds (list, optional): threshold value, to threshold probability maps. Defaults to [0.3, 0.4, 0.5, 0.6].
+            input_channel (_type_, optional): add input channel extra dimension. Defaults to None.
+            invert_pmaps (bool, optional): treat boundary signal as background for instance mask output. Defaults to False.
+        Returns:
+            _type_:  segmentation volume either 4D (segmentation per channel)
+        """
+        if self.input_channel is not None:
+            input = np.expand_dims(input[self.input_channel], axis=0)
+
+        segs = []
+        for predictions in input:
+
+            for th in self.thresholds:
+                segs_channel = []
+                for slice in predictions:
+                    # threshold probability maps
+                    slice_th = slice > th
+
+                    if self.invert_pmaps:
+                        # for connected component analysis we need to treat boundary signal as background
+                        # assign 0-label to boundary mask
+                        slice_th = np.logical_not(slice_th)
+
+                    slice_th = slice_th.astype(np.uint8)
+                    # run connected components on the predicted mask; consider only 1-connectivity
+                    seg = measure.label(slice_th, background=0, connectivity=1)
+                    segs_channel.append(seg)
+                single_channel_segs = np.stack(segs_channel)
+                segs.append(single_channel_segs)
         return np.stack(segs)
 
 
