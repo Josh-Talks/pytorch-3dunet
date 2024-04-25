@@ -23,10 +23,14 @@ def _relabel(input):
     return unique_labels.reshape(input.shape)
 
 
-def _iou_matrix(gt, seg):
+def _iou_matrix(gt, seg, ignore_index=None):
     # relabel gt and seg for smaller memory footprint of contingency table
     gt = _relabel(gt)
     seg = _relabel(seg)
+
+    if ignore_index is not None:
+        gt[gt == ignore_index] = 0
+        seg[gt == ignore_index] = 0
 
     # get number of overlapping pixels between GT and SEG
     n_inter = contingency_table(gt, seg).A
