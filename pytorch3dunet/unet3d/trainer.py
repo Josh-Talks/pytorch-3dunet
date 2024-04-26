@@ -1,6 +1,8 @@
 import os
 import time
 import wandb
+from PIL import Image as im
+import numpy as np
 import torch
 import torch.nn as nn
 from torch.optim.lr_scheduler import ReduceLROnPlateau
@@ -92,7 +94,7 @@ class UNetTrainer:
                  max_num_epochs, max_num_iterations, validate_after_iters_initial=50, validate_after_iters_final=500,
                  validate_switch_iteration=750, log_after_iters=100, validate_iters=None, num_iterations=1, num_epoch=0, 
                  eval_score_higher_is_better=True, tensorboard_formatter=None, skip_train_validation=False, resume=None, 
-                 pre_trained=None, timer=False, **kwargs):
+                 pre_trained=None, timer=False, log_train_images=False, **kwargs):
 
         self.model = model
         self.optimizer = optimizer
@@ -110,6 +112,7 @@ class UNetTrainer:
         self.validate_iters = validate_iters
         self.eval_score_higher_is_better = eval_score_higher_is_better
         self.timer = timer
+        self.log_train_images = log_train_images
 
         logger.info(model)
         logger.info(f'eval_score_higher_is_better: {eval_score_higher_is_better}')
@@ -193,6 +196,20 @@ class UNetTrainer:
                 wandb.log(
                     {"loader_time": loader_time - iter_start_time},
                     step=self.num_iterations,
+                )
+            if self.log_train_images:
+                self._log_wandb_images(
+                    input.cpu().numpy()[0].squeeze(), "raw_image", "train_raw"
+                )
+                self._log_wandb_images(
+                    target.cpu().numpy()[0][0].squeeze(),
+                    "target_boundary_image",
+                    "train_target_boundary",
+                )
+                self._log_wandb_images(
+                    target.cpu().numpy()[0][1].squeeze(),
+                    "target_instance_image",
+                    "train_target_instance",
                 )
             output, loss = self._forward_pass(input, target, weight)
             if self.timer == True:
@@ -322,28 +339,23 @@ class UNetTrainer:
                 val_losses.update(loss.item(), self._batch_size(input))
 
                 if i % 100 == 0:
-                    raw_image = wandb.Image(input.cpu().numpy()[0], caption="raw_image")
-                    wandb.log({"validation_raw": raw_image}, step=self.num_iterations)
-                    prediction_image = wandb.Image(
-                        output.cpu().numpy()[0], caption="prediction_image"
+                    self._log_wandb_images(
+                        input.cpu().numpy()[0].squeeze(), "raw_image", "validation_raw"
                     )
-                    wandb.log(
-                        {"validation_prediction": prediction_image},
-                        step=self.num_iterations,
+                    self._log_wandb_images(
+                        output.cpu().numpy()[0].squeeze(),
+                        "prediction_image",
+                        "validation_pred",
                     )
-                    target_image = wandb.Image(
-                        target.cpu().numpy()[0][0], caption="target_boundary_image"
+                    self._log_wandb_images(
+                        target.cpu().numpy()[0][0].squeeze(),
+                        "target_boundary_image",
+                        "validation_target_boundary",
                     )
-                    wandb.log(
-                        {"validation_target_boundary": target_image},
-                        step=self.num_iterations,
-                    )
-                    target_instance_image = wandb.Image(
-                        target.cpu().numpy()[0][1], caption="target_instance_image"
-                    )
-                    wandb.log(
-                        {"validation_target_instance": target_instance_image},
-                        step=self.num_iterations,
+                    self._log_wandb_images(
+                        target.cpu().numpy()[0][1].squeeze(),
+                        "target_instance_image",
+                        "validation_target_instance",
                     )
                     #self._log_images(input, target, output, 'val_')
 
@@ -482,3 +494,11 @@ class UNetTrainer:
             return input[0].size(0)
         else:
             return input.size(0)
+    
+    def _log_wandb_images(self, image_data, caption, log_name):
+        formatted_image = (image_data * 255 / np.max(image_data)).astype("uint8")
+        image = wandb.Image(
+            im.fromarray(formatted_image),
+            caption=caption,
+        )
+        wandb.log({log_name: image}, step=self.num_iterations)
