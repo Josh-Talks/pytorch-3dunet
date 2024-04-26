@@ -117,18 +117,29 @@ class RandomContrast:
     Adjust contrast by scaling each voxel to `mean + alpha * (v - mean)`.
     """
 
-    def __init__(self, random_state, alpha=(0.5, 1.5), execution_probability=0.1, **kwargs):
+    def __init__(
+            self, 
+            random_state, 
+            alpha=(0.5, 1.5), 
+            execution_probability=0.1, 
+            clip_kwargs={"a_min": -1, "a_max": 1},
+            **kwargs
+        ):
         self.random_state = random_state
         assert len(alpha) == 2
         self.alpha = alpha
         self.execution_probability = execution_probability
+        self.clip_kwargs = clip_kwargs
 
     def __call__(self, m):
         if self.random_state.uniform() < self.execution_probability:
             alpha = self.random_state.uniform(self.alpha[0], self.alpha[1])
             mean = np.mean(m)
             result = mean + alpha * (m - mean)
-            return np.clip(result, -1, 1)
+            if self.clip_kwargs:
+                return np.clip(result, **self.clip_kwargs)
+            else:
+                return result
 
         return m
 
