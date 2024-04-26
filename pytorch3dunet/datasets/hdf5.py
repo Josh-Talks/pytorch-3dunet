@@ -46,7 +46,7 @@ class AbstractHDF5Dataset(ConfigDataset):
     """
 
     def __init__(self, file_path, roi, phase, slice_builder_config, transformer_config, raw_internal_path='raw',
-                 label_internal_path='label', weight_internal_path=None, global_normalization=True):
+                 label_internal_path='label', weight_internal_path=None, global_normalization=True, global_percentiles=None):
         assert phase in ['train', 'val', 'test']
 
         self.phase = phase
@@ -62,7 +62,14 @@ class AbstractHDF5Dataset(ConfigDataset):
             logger.info('Calculating mean and std of the raw data...')
             with h5py.File(file_path, 'r') as f:
                 raw = f[raw_internal_path][:]
-                stats = calculate_stats(raw)
+                if global_percentiles is not None:
+                    stats = calculate_stats(
+                        raw, 
+                        percentile_min=global_percentiles[0], 
+                        percentile_max=global_percentiles[1]
+                    )
+                else:
+                    stats = calculate_stats(raw)
         else:
             stats = calculate_stats(None, True)
 
@@ -214,7 +221,8 @@ class AbstractHDF5Dataset(ConfigDataset):
                               raw_internal_path=dataset_config.get('raw_internal_path', 'raw'),
                               label_internal_path=dataset_config.get('label_internal_path', 'label'),
                               weight_internal_path=dataset_config.get('weight_internal_path', None),
-                              global_normalization=dataset_config.get('global_normalization', None))
+                              global_normalization=dataset_config.get('global_normalization', None),
+                              global_percentiles=dataset_config.get('global_percentiles', None))
                 datasets.append(dataset)
             except Exception:
                 logger.error(f'Skipping {phase} set: {file_path}', exc_info=True)
@@ -229,11 +237,11 @@ class StandardHDF5Dataset(AbstractHDF5Dataset):
 
     def __init__(self, file_path, roi, phase, slice_builder_config, transformer_config,
                  raw_internal_path='raw', label_internal_path='label', weight_internal_path=None,
-                 global_normalization=True):
+                 global_normalization=True, global_percentiles=None):
         super().__init__(file_path=file_path, roi=roi, phase=phase, slice_builder_config=slice_builder_config,
                          transformer_config=transformer_config, raw_internal_path=raw_internal_path,
                          label_internal_path=label_internal_path, weight_internal_path=weight_internal_path,
-                         global_normalization=global_normalization)
+                         global_normalization=global_normalization, global_percentiles=global_percentiles)
         self._raw = None
         self._raw_padded = None
         self._label = None

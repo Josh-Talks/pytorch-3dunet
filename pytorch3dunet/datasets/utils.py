@@ -287,7 +287,7 @@ def default_prediction_collate(batch):
     raise TypeError((error_msg.format(type(batch[0]))))
 
 
-def calculate_stats(img: np.array, skip: bool = False) -> dict[str, Any]:
+def calculate_stats(img: np.array, skip: bool = False, percentile_min=1, percentile_max=99.6) -> dict[str, Any]:
     """
     Calculates the minimum percentile, maximum percentile, mean, and standard deviation of the image.
 
@@ -299,7 +299,7 @@ def calculate_stats(img: np.array, skip: bool = False) -> dict[str, Any]:
         tuple[float, float, float, float]: The minimum percentile, maximum percentile, mean, and std dev
     """
     if not skip:
-        pmin, pmax, mean, std = np.percentile(img, 1), np.percentile(img, 99.6), np.mean(img), np.std(img)
+        pmin, pmax, mean, std = np.percentile(img, percentile_min), np.percentile(img, percentile_max), np.mean(img), np.std(img)
     else:
         pmin, pmax, mean, std = None, None, None, None
 
