@@ -89,9 +89,10 @@ class UNetTrainer:
     """
 
     def __init__(self, model, optimizer, lr_scheduler, loss_criterion, eval_criterion, loaders, checkpoint_dir,
-                 max_num_epochs, max_num_iterations, validate_after_iters=200, log_after_iters=100, validate_iters=None,
-                 num_iterations=1, num_epoch=0, eval_score_higher_is_better=True, tensorboard_formatter=None,
-                 skip_train_validation=False, resume=None, pre_trained=None, timer=False, **kwargs):
+                 max_num_epochs, max_num_iterations, validate_after_iters_initial=50, validate_after_iters_final=500,
+                 validate_switch_iteration=750, log_after_iters=100, validate_iters=None, num_iterations=1, num_epoch=0, 
+                 eval_score_higher_is_better=True, tensorboard_formatter=None, skip_train_validation=False, resume=None, 
+                 pre_trained=None, timer=False, **kwargs):
 
         self.model = model
         self.optimizer = optimizer
@@ -102,7 +103,9 @@ class UNetTrainer:
         self.checkpoint_dir = checkpoint_dir
         self.max_num_epochs = max_num_epochs
         self.max_num_iterations = max_num_iterations
-        self.validate_after_iters = validate_after_iters
+        self.validate_after_iters_initial = validate_after_iters_initial
+        self.validate_after_iters_final = validate_after_iters_final
+        self.validate_switch_iteration = validate_switch_iteration
         self.log_after_iters = log_after_iters
         self.validate_iters = validate_iters
         self.eval_score_higher_is_better = eval_score_higher_is_better
@@ -172,6 +175,8 @@ class UNetTrainer:
         # sets the model in training mode
         self.model.train()
 
+        current_validate_after_iters = self.validate_after_iters_initial
+
         for t in self.loaders['train']:
             if self.timer == True:
                 iter_start_time = time.time()
@@ -203,7 +208,10 @@ class UNetTrainer:
             loss.backward()
             self.optimizer.step()
 
-            if self.num_iterations % self.validate_after_iters == 0:
+            if self.num_iterations > self.validate_switch_iteration:
+                current_validate_after_iters = self.validate_after_iters_final
+
+            if self.num_iterations % current_validate_after_iters == 0:
                 if self.timer == True:
                     val_start_time = time.time()
                 # set the model in eval mode
