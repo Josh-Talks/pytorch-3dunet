@@ -28,10 +28,7 @@ def get_predictor(model, config):
     return predictor_class(model, output_dir, out_channels, **predictor_config)
 
 
-def main():
-    # Load configuration
-    config, _ = load_config()
-
+def predict(config):
     # setup wandb logging
     wandb.init(
         project=config["wandb"]["project"],
@@ -64,4 +61,6 @@ def main():
 
 
 if __name__ == '__main__':
-    main()
+    # Load configuration
+    config, _ = load_config()
+    predict(config)
