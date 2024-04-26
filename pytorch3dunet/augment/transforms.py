@@ -599,22 +599,37 @@ class Standardize:
 
 
 class PercentileNormalizer:
-    def __init__(self, pmin=1, pmax=99.6, channelwise=False, eps=1e-10, **kwargs):
+    def __init__(
+        self, 
+        pmin=None, 
+        pmax=None,
+        percentile_min=1,
+        percentile_max=99.6,
+        channelwise=False, 
+        eps=1e-10, 
+        **kwargs
+    ):
         self.eps = eps
         self.pmin = pmin
         self.pmax = pmax
+        self.percentile_min = percentile_min
+        self.percentile_max = percentile_max
         self.channelwise = channelwise
 
     def __call__(self, m):
-        if self.channelwise:
-            axes = list(range(m.ndim))
-            # average across channels
-            axes = tuple(axes[1:])
-            pmin = np.percentile(m, self.pmin, axis=axes, keepdims=True)
-            pmax = np.percentile(m, self.pmax, axis=axes, keepdims=True)
+        if (self.pmin) is not None:
+            assert self.pmax is not None, "pmax must be provided"
+            pmin, pmax = self.pmin, self.pmax
         else:
-            pmin = np.percentile(m, self.pmin)
-            pmax = np.percentile(m, self.pmax)
+            if self.channelwise:
+                axes = list(range(m.ndim))
+                # average across channels
+                axes = tuple(axes[1:])
+                pmin = np.percentile(m, self.percentile_min, axis=axes, keepdims=True)
+                pmax = np.percentile(m, self.percentile_max, axis=axes, keepdims=True)
+            else:
+                pmin = np.percentile(m, self.percentile_min)
+                pmax = np.percentile(m, self.percentile_max)
 
         return (m - pmin) / (pmax - pmin + self.eps)
 
