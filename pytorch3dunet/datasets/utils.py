@@ -145,10 +145,10 @@ class FilterSliceBuilder(SliceBuilder):
 
         def ignore_predicate(raw_label_idx):
             label_idx = raw_label_idx[1]
-            patch = label_dataset[label_idx]
+            patch = np.copy(label_dataset[label_idx])
             if ignore_index is not None:
-                patch = np.copy(patch)
-                patch[patch == ignore_index] = 0
+                for ii in ignore_index:
+                    patch[patch == ii] = 0
             non_ignore_counts = np.count_nonzero(patch != 0)
             non_ignore_counts = non_ignore_counts / patch.size
             return non_ignore_counts > threshold or rand_state.rand() < slack_acceptance
