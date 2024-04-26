@@ -55,7 +55,7 @@ class AbstractHDF5Dataset(ConfigDataset):
         self.raw_internal_path = raw_internal_path
         self.label_internal_path = label_internal_path
         self.weight_internal_path = weight_internal_path
-
+        self.patch_shape = slice_builder_config.get('patch_shape')
         self.halo_shape = slice_builder_config.get('halo_shape', [0, 0, 0])
 
         if global_normalization:
@@ -194,6 +194,9 @@ class AbstractHDF5Dataset(ConfigDataset):
                 assert weight_map.ndim in [3, 4], 'Weight map dataset must be 3D (DxHxW) or 4D (CxDxHxW)'
                 assert _volume_shape(raw) == _volume_shape(weight_map), 'Raw and weight map have to be of the same size'
 
+    def get_patch_shape(self):
+        return self.patch_shape
+    
     @classmethod
     def create_datasets(cls, dataset_config, phase):
         phase_config = dataset_config[phase]
