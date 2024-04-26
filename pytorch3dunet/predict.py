@@ -1,6 +1,6 @@
 import importlib
 import os
-
+import wandb
 import torch
 import torch.nn as nn
 
@@ -31,6 +31,14 @@ def get_predictor(model, config):
 def main():
     # Load configuration
     config, _ = load_config()
+
+    # setup wandb logging
+    wandb.init(
+        project=config["wandb"]["project"],
+        name=config["wandb"]["name"],
+        mode=config["wandb"]["mode"],
+        config=config,
+    )
 
     # Create the model
     model = get_model(config['model'])
