@@ -15,10 +15,10 @@ from pytorch3dunet.datasets.utils import SliceBuilder, remove_padding
 from pytorch3dunet.unet3d.model import UNet2D
 from pytorch3dunet.unet3d.utils import get_logger
 
-logger = get_logger('UNetPredictor')
+logger = get_logger("UNetPredictor")
 
 
-def _get_output_file(dataset, suffix='_predictions', output_dir=None, file_name=None):
+def _get_output_file(dataset, suffix="_predictions", output_dir=None, file_name=None):
     if file_name is None:
         input_dir, file_name = os.path.split(dataset.file_path)
         file_name = os.path.splitext(file_name)[0]
@@ -26,7 +26,7 @@ def _get_output_file(dataset, suffix='_predictions', output_dir=None, file_name=
         input_dir, _ = os.path.split(dataset.file_path)
     if output_dir is None:
         output_dir = input_dir
-    output_filename = file_name + suffix + '.h5'
+    output_filename = file_name + suffix + ".h5"
     return Path(output_dir) / output_filename
 
 
@@ -37,16 +37,18 @@ def _is_2d_model(model):
 
 
 class _AbstractPredictor:
-    def __init__(self,
-                 model: nn.Module,
-                 output_dir: str,
-                 out_channels: int,
-                 output_dataset: str = 'predictions',
-                 save_segmentation: bool = False,
-                 prediction_channel: int = None,
-                 save_suffix: str = '_predictions',
-                 output_file_name: Optional[str] = None,
-                 **kwargs):
+    def __init__(
+        self,
+        model: nn.Module,
+        output_dir: str,
+        out_channels: int,
+        output_dataset: str = "predictions",
+        save_segmentation: bool = False,
+        prediction_channel: int = None,
+        save_suffix: str = "_predictions",
+        output_file_name: Optional[str] = None,
+        **kwargs,
+    ):
         """
         Base class for predictors.
         Args:
@@ -66,7 +68,6 @@ class _AbstractPredictor:
         self.save_suffix = save_suffix
         self.output_file_name = output_file_name
 
-
     def __call__(self, test_loader):
         raise NotImplementedError
 
@@ -80,25 +81,36 @@ class StandardPredictor(_AbstractPredictor):
     The output dataset names inside the H5 is given by `output_dataset` config argument.
     """
 
-    def __init__(self,
-                 model: nn.Module,
-                 output_dir: str,
-                 out_channels: int,
-                 output_dataset: str = 'predictions',
-                 save_segmentation: bool = False,
-                 prediction_channel: int = None,
-                 save_suffix: str = '_predictions',
-                 output_file_name: Optional[str] = None,
-                 **kwargs):
-        super().__init__(model, output_dir, out_channels, output_dataset, save_segmentation, prediction_channel,
-                         save_suffix, output_file_name, **kwargs)
+    def __init__(
+        self,
+        model: nn.Module,
+        output_dir: str,
+        out_channels: int,
+        output_dataset: str = "predictions",
+        save_segmentation: bool = False,
+        prediction_channel: int = None,
+        save_suffix: str = "_predictions",
+        output_file_name: Optional[str] = None,
+        **kwargs,
+    ):
+        super().__init__(
+            model,
+            output_dir,
+            out_channels,
+            output_dataset,
+            save_segmentation,
+            prediction_channel,
+            save_suffix,
+            output_file_name,
+            **kwargs,
+        )
 
     def __call__(self, test_loader):
         assert isinstance(test_loader.dataset, AbstractHDF5Dataset)
         logger.info(f"Processing '{test_loader.dataset.file_path}'...")
         start = time.perf_counter()
 
-        logger.info(f'Running inference on {len(test_loader)} batches')
+        logger.info(f"Running inference on {len(test_loader)} batches")
         # dimensionality of the output predictions
         volume_shape = test_loader.dataset.volume_shape()
         if self.prediction_channel is not None:
@@ -109,15 +121,17 @@ class StandardPredictor(_AbstractPredictor):
 
         # create destination H5 file
         output_file = _get_output_file(
-            dataset=test_loader.dataset, 
+            dataset=test_loader.dataset,
             suffix=self.save_suffix,
             output_dir=self.output_dir,
-            file_name=self.output_file_name
+            file_name=self.output_file_name,
         )
-        with h5py.File(output_file, 'w') as h5_output_file:
+        with h5py.File(output_file, "w") as h5_output_file:
             # allocate prediction and normalization arrays
-            logger.info('Allocating prediction and normalization arrays...')
-            prediction_map, normalization_mask = self._allocate_prediction_maps(prediction_maps_shape, h5_output_file)
+            logger.info("Allocating prediction and normalization arrays...")
+            prediction_map, normalization_mask = self._allocate_prediction_maps(
+                prediction_maps_shape, h5_output_file
+            )
 
             # determine halo used for padding
             patch_halo = test_loader.dataset.halo_shape
@@ -164,23 +178,29 @@ class StandardPredictor(_AbstractPredictor):
                         # count voxel visits for normalization
                         normalization_mask[index] += 1
 
-            logger.info(f'Finished inference in {time.perf_counter() - start:.2f} seconds')
+            logger.info(
+                f"Finished inference in {time.perf_counter() - start:.2f} seconds"
+            )
             # save results
-            output_type = 'segmentation' if self.save_segmentation else 'probability maps'
-            logger.info(f'Saving {output_type} to: {output_file}')
-            self._save_results(prediction_map, normalization_mask, h5_output_file, test_loader.dataset)
+            output_type = (
+                "segmentation" if self.save_segmentation else "probability maps"
+            )
+            logger.info(f"Saving {output_type} to: {output_file}")
+            self._save_results(
+                prediction_map, normalization_mask, h5_output_file, test_loader.dataset
+            )
 
     def _allocate_prediction_maps(self, output_shape, output_file):
         # initialize the output prediction arrays
-        prediction_map = np.zeros(output_shape, dtype='float32')
+        prediction_map = np.zeros(output_shape, dtype="float32")
         # initialize normalization mask in order to average out probabilities of overlapping patches
-        normalization_mask = np.zeros(output_shape, dtype='uint8')
+        normalization_mask = np.zeros(output_shape, dtype="uint8")
         return prediction_map, normalization_mask
 
     def _save_results(self, prediction_map, normalization_mask, output_file, dataset):
         result = prediction_map / normalization_mask
         if self.save_segmentation:
-            result = np.argmax(result, axis=0).astype('uint16')
+            result = np.argmax(result, axis=0).astype("uint16")
         if self.output_dataset in output_file:
             output_file[self.output_dataset].resize(
                 (output_file[self.output_dataset].shape[0] + result.shape[0]), axis=0
@@ -194,37 +214,51 @@ class StandardPredictor(_AbstractPredictor):
                 maxshape=(None, None, None, None),
             )
 
+
 class LazyPredictor(StandardPredictor):
     """
-        Applies the model on the given dataset and saves the result in the `output_file` in the H5 format.
-        Predicted patches are directly saved into the H5 and they won't be stored in memory. Since this predictor
-        is slower than the `StandardPredictor` it should only be used when the predicted volume does not fit into RAM.
-        """
+    Applies the model on the given dataset and saves the result in the `output_file` in the H5 format.
+    Predicted patches are directly saved into the H5 and they won't be stored in memory. Since this predictor
+    is slower than the `StandardPredictor` it should only be used when the predicted volume does not fit into RAM.
+    """
 
-    def __init__(self,
-                 model: nn.Module,
-                 output_dir: str,
-                 out_channels: int,
-                 output_dataset: str = 'predictions',
-                 save_segmentation: bool = False,
-                 prediction_channel: int = None,
-                 **kwargs):
-        super().__init__(model, output_dir, out_channels, output_dataset, save_segmentation, prediction_channel,
-                         **kwargs)
+    def __init__(
+        self,
+        model: nn.Module,
+        output_dir: str,
+        out_channels: int,
+        output_dataset: str = "predictions",
+        save_segmentation: bool = False,
+        prediction_channel: int = None,
+        **kwargs,
+    ):
+        super().__init__(
+            model,
+            output_dir,
+            out_channels,
+            output_dataset,
+            save_segmentation,
+            prediction_channel,
+            **kwargs,
+        )
 
     def _allocate_prediction_maps(self, output_shape, output_file):
         # allocate datasets for probability maps
-        prediction_map = output_file.create_dataset(self.output_dataset,
-                                                    shape=output_shape,
-                                                    dtype='float32',
-                                                    chunks=True,
-                                                    compression='gzip')
+        prediction_map = output_file.create_dataset(
+            self.output_dataset,
+            shape=output_shape,
+            dtype="float32",
+            chunks=True,
+            compression="gzip",
+        )
         # allocate datasets for normalization masks
-        normalization_mask = output_file.create_dataset('normalization',
-                                                        shape=output_shape,
-                                                        dtype='uint8',
-                                                        chunks=True,
-                                                        compression='gzip')
+        normalization_mask = output_file.create_dataset(
+            "normalization",
+            shape=output_shape,
+            dtype="uint8",
+            chunks=True,
+            compression="gzip",
+        )
         return prediction_map, normalization_mask
 
     def _save_results(self, prediction_map, normalization_mask, output_file, dataset):
@@ -232,25 +266,43 @@ class LazyPredictor(StandardPredictor):
         # take slices which are 1/27 of the original volume
         patch_shape = (z // 3, y // 3, x // 3)
         if self.save_segmentation:
-            output_file.create_dataset('segmentation', shape=(z, y, x), dtype='uint16', chunks=True, compression='gzip')
+            output_file.create_dataset(
+                "segmentation",
+                shape=(z, y, x),
+                dtype="uint16",
+                chunks=True,
+                compression="gzip",
+            )
 
-        for index in SliceBuilder._build_slices(prediction_map, patch_shape=patch_shape, stride_shape=patch_shape):
-            logger.info(f'Normalizing slice: {index}')
+        for index in SliceBuilder._build_slices(
+            prediction_map, patch_shape=patch_shape, stride_shape=patch_shape
+        ):
+            logger.info(f"Normalizing slice: {index}")
             prediction_map[index] /= normalization_mask[index]
             # make sure to reset the slice that has been visited already in order to avoid 'double' normalization
             # when the patches overlap with each other
             normalization_mask[index] = 1
             # save segmentation
             if self.save_segmentation:
-                output_file['segmentation'][index[1:]] = np.argmax(prediction_map[index], axis=0).astype('uint16')
+                output_file["segmentation"][index[1:]] = np.argmax(
+                    prediction_map[index], axis=0
+                ).astype("uint16")
 
-        del output_file['normalization']
+        del output_file["normalization"]
         if self.save_segmentation:
             del output_file[self.output_dataset]
 
 
 class DSB2018Predictor(_AbstractPredictor):
-    def __init__(self, model, output_dir, config, save_segmentation=True, pmaps_thershold=0.5, **kwargs):
+    def __init__(
+        self,
+        model,
+        output_dir,
+        config,
+        save_segmentation=True,
+        pmaps_thershold=0.5,
+        **kwargs,
+    ):
         super().__init__(model, output_dir, config, **kwargs)
         self.pmaps_threshold = pmaps_thershold
         self.save_segmentation = save_segmentation
@@ -275,36 +327,34 @@ class DSB2018Predictor(_AbstractPredictor):
                 # forward pass
                 pred = self.model(img)
 
-                executor.submit(
-                    dsb_save_batch,
-                    self.output_dir,
-                    path
-                )
+                executor.submit(dsb_save_batch, self.output_dir, path)
 
-        print('Waiting for all predictions to be saved to disk...')
+        print("Waiting for all predictions to be saved to disk...")
         executor.shutdown(wait=True)
 
 
 def dsb_save_batch(output_dir, path, pred, save_segmentation=True, pmaps_thershold=0.5):
     def _pmaps_to_seg(pred):
-        mask = (pred > pmaps_thershold)
-        return measure.label(mask).astype('uint16')
+        mask = pred > pmaps_thershold
+        return measure.label(mask).astype("uint16")
 
     # convert to numpy array
     for single_pred, single_path in zip(pred, path):
-        logger.info(f'Processing {single_path}')
+        logger.info(f"Processing {single_path}")
         single_pred = single_pred.squeeze()
 
         # save to h5 file
-        out_file = os.path.splitext(single_path)[0] + '_predictions.h5'
+        out_file = os.path.splitext(single_path)[0] + "_predictions.h5"
         if output_dir is not None:
             out_file = os.path.join(output_dir, os.path.split(out_file)[1])
 
-        with h5py.File(out_file, 'w') as f:
+        with h5py.File(out_file, "w") as f:
             # logger.info(f'Saving output to {out_file}')
-            f.create_dataset('predictions', data=single_pred, compression='gzip')
+            f.create_dataset("predictions", data=single_pred, compression="gzip")
             if save_segmentation:
-                f.create_dataset('segmentation', data=_pmaps_to_seg(single_pred), compression='gzip')
+                f.create_dataset(
+                    "segmentation", data=_pmaps_to_seg(single_pred), compression="gzip"
+                )
 
 
 class PatchWisePredictor(_AbstractPredictor):
@@ -316,30 +366,41 @@ class PatchWisePredictor(_AbstractPredictor):
     The output dataset names inside the H5 is given by `output_dataset` config argument.
     """
 
-    def __init__(self,
-                 model: nn.Module,
-                 output_dir: str,
-                 out_channels: int,
-                 output_dataset: str = 'predictions',
-                 save_segmentation: bool = False,
-                 prediction_channel: int = None,
-                 save_suffix: str = '_predictions',
-                 output_file_name: Optional[str] = None,
-                 **kwargs):
-        super().__init__(model, output_dir, out_channels, output_dataset, save_segmentation, prediction_channel,
-                         save_suffix, output_file_name, **kwargs)
+    def __init__(
+        self,
+        model: nn.Module,
+        output_dir: str,
+        out_channels: int,
+        output_dataset: str = "predictions",
+        save_segmentation: bool = False,
+        prediction_channel: int = None,
+        save_suffix: str = "_predictions",
+        output_file_name: Optional[str] = None,
+        **kwargs,
+    ):
+        super().__init__(
+            model,
+            output_dir,
+            out_channels,
+            output_dataset,
+            save_segmentation,
+            prediction_channel,
+            save_suffix,
+            output_file_name,
+            **kwargs,
+        )
 
     def __call__(self, test_loader):
         assert isinstance(test_loader.dataset, AbstractHDF5Dataset)
         logger.info(f"Processing '{test_loader.dataset.file_path}'...")
         start = time.perf_counter()
 
-        logger.info(f'Running inference on {len(test_loader)} batches')
+        logger.info(f"Running inference on {len(test_loader)} batches")
         # dimensionality of the output predictions
-        #volume_shape = test_loader.dataset.volume_shape()
+        # volume_shape = test_loader.dataset.volume_shape()
         patch_count = test_loader.dataset.__len__()
         # get patch shape
-        patch_shape = test_loader.dataset.patch_shape()
+        patch_shape = test_loader.dataset.get_patch_shape()
         if self.prediction_channel is not None:
             # single channel prediction map
             prediction_maps_shape = (patch_count, 1, *patch_shape)
@@ -351,15 +412,15 @@ class PatchWisePredictor(_AbstractPredictor):
         )
         # create destination H5 file
         output_file = _get_output_file(
-            dataset=test_loader.dataset, 
+            dataset=test_loader.dataset,
             suffix=self.save_suffix,
             output_dir=self.output_dir,
-            file_name=self.output_file_name
+            file_name=self.output_file_name,
         )
-        with h5py.File(output_file, 'w') as h5_output_file:
+        with h5py.File(output_file, "w") as h5_output_file:
             # allocate output prediction arrays
-            logger.info('Allocating prediction arrays...')
-            prediction_map = np.zeros(prediction_maps_shape, dtype='float32')
+            logger.info("Allocating prediction arrays...")
+            prediction_map = np.zeros(prediction_maps_shape, dtype="float32")
             # intialise list to save patch location indices
             patch_indices = []
 
@@ -413,7 +474,7 @@ class PatchWisePredictor(_AbstractPredictor):
                         pred = np.expand_dims(pred, axis=0)
                         # accumulate probabilities into the output prediction array
                         prediction_map[*index] = pred
-                        #save patch location indices
+                        # save patch location indices
                         patch_indices.append(
                             [
                                 [patch_index[0].start, patch_index[0].stop],
@@ -421,12 +482,15 @@ class PatchWisePredictor(_AbstractPredictor):
                                 [patch_index[2].start, patch_index[2].stop],
                             ]
                         )
-            logger.info(f'Finished inference in {time.perf_counter() - start:.2f} seconds')
+            logger.info(
+                f"Finished inference in {time.perf_counter() - start:.2f} seconds"
+            )
             # save results
-            output_type = 'segmentation' if self.save_segmentation else 'probability maps'
-            logger.info(f'Saving {output_type} to: {output_file}')
+            output_type = (
+                "segmentation" if self.save_segmentation else "probability maps"
+            )
+            logger.info(f"Saving {output_type} to: {output_file}")
             self._save_results(prediction_map, patch_indices, h5_output_file)
-
 
     def _save_results(self, prediction_map, patch_indices, output_file):
         output_file.create_dataset(
@@ -439,4 +503,3 @@ class PatchWisePredictor(_AbstractPredictor):
             data=np.array(patch_indices),
             compression="gzip",
         )
-        
