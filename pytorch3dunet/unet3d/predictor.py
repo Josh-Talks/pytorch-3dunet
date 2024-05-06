@@ -9,6 +9,8 @@ import torch
 from skimage import measure
 from torch import nn
 from tqdm import tqdm
+import wandb
+from PIL import Image as im
 
 from pytorch3dunet.datasets.hdf5 import AbstractHDF5Dataset
 from pytorch3dunet.datasets.utils import SliceBuilder, remove_padding
@@ -47,6 +49,7 @@ class _AbstractPredictor:
         prediction_channel: int = None,
         save_suffix: str = "_predictions",
         output_file_name: Optional[str] = None,
+        log_images: bool = False,
         **kwargs,
     ):
         """
@@ -67,6 +70,7 @@ class _AbstractPredictor:
         self.prediction_channel = prediction_channel
         self.save_suffix = save_suffix
         self.output_file_name = output_file_name
+        self.log_images = log_images
 
     def __call__(self, test_loader):
         raise NotImplementedError
@@ -376,6 +380,7 @@ class PatchWisePredictor(_AbstractPredictor):
         prediction_channel: int = None,
         save_suffix: str = "_predictions",
         output_file_name: Optional[str] = None,
+        log_images: bool = False,
         **kwargs,
     ):
         super().__init__(
@@ -387,6 +392,7 @@ class PatchWisePredictor(_AbstractPredictor):
             prediction_channel,
             save_suffix,
             output_file_name,
+            log_images,
             **kwargs,
         )
 
@@ -440,8 +446,22 @@ class PatchWisePredictor(_AbstractPredictor):
                     if _is_2d_model(self.model):
                         # remove the singleton z-dimension from the input
                         input = torch.squeeze(input, dim=-3)
+                        if self.log_images:
+                            self._log_wandb_images(
+                                input[0].cpu().numpy().squeeze(),
+                                f"input_{i}",
+                                "input_images",
+                                i,
+                            )
                         # forward pass
                         prediction = self.model(input)
+                        if self.log_images:
+                            self._log_wandb_images(
+                                prediction[0].cpu().numpy().squeeze(),
+                                f"prediction_{i}",
+                                "padded_prediction",
+                                i,
+                            )
                         # add the singleton z-dimension to the output
                         prediction = torch.unsqueeze(prediction, dim=-3)
                     else:
@@ -450,6 +470,15 @@ class PatchWisePredictor(_AbstractPredictor):
 
                     # unpad the predicted patch
                     prediction = remove_padding(prediction, patch_halo)
+
+                    if self.log_images:
+                        self._log_wandb_images(
+                            prediction[0].cpu().numpy().squeeze(),
+                            f"unpadded_prediction_{i}",
+                            "unpadded_prediction",
+                            i,
+                        )
+
                     # convert to numpy array
                     prediction = prediction.cpu().numpy()
                     # for each batch sample
@@ -503,3 +532,11 @@ class PatchWisePredictor(_AbstractPredictor):
             data=np.array(patch_indices),
             compression="gzip",
         )
+    
+    def _log_wandb_images(self, image_data, caption, log_name, pred_step):
+        formatted_image = (image_data * 255 / np.max(image_data)).astype("uint8")
+        image = wandb.Image(
+            im.fromarray(formatted_image),
+            caption=caption,
+        )
+        wandb.log({log_name: image}, step=pred_step)
