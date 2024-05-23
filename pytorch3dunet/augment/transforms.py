@@ -204,6 +204,9 @@ class RandomGamma:
                 result = self.gain * np.abs(img) ** gamma
                 result[neg_ids] *= -1
 
+            else:
+                result = self.gain * img**gamma
+
             if self.clip_kwargs:
                 return np.clip(result, **self.clip_kwargs)
             return result
