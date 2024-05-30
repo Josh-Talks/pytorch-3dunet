@@ -4,6 +4,7 @@ import numpy as np
 import torch
 from skimage import measure
 from skimage.metrics import adapted_rand_error, peak_signal_noise_ratio, mean_squared_error
+from sklearn.metrics import f1_score
 
 from pytorch3dunet.unet3d.losses import compute_per_channel_dice
 from pytorch3dunet.unet3d.seg_metrics import AveragePrecision, Accuracy
@@ -478,6 +479,18 @@ class MSE:
         input, target = convert_to_numpy(input, target)
         return mean_squared_error(input, target)
 
+class F1Score:
+    """
+    Computes F1 score between input and target
+    """
+
+    def __init__(self, threshold=0.5, **kwargs):
+        self.threshold = threshold
+
+    def __call__(self, input, target):
+        input, target = convert_to_numpy(input, target)
+        input_binary = (input > self.threshold).astype(int)
+        return f1_score(target.flatten(), input_binary.flatten())
 
 def get_evaluation_metric(config):
     """
