@@ -347,16 +347,23 @@ class UNetTrainer:
                         "prediction_image",
                         "validation_pred",
                     )
-                    self._log_wandb_images(
-                        target.cpu().numpy()[0][0].squeeze(),
-                        "target_boundary_image",
-                        "validation_target_boundary",
-                    )
-                    self._log_wandb_images(
-                        target.cpu().numpy()[0][1].squeeze(),
-                        "target_instance_image",
-                        "validation_target_instance",
-                    )
+                    if target.size()[1] == 2:
+                        self._log_wandb_images(
+                            target.cpu().numpy()[0][0].squeeze(),
+                            "target_boundary_image",
+                            "validation_target_boundary",
+                        )
+                        self._log_wandb_images(
+                            target.cpu().numpy()[0][1].squeeze(),
+                            "target_instance_image",
+                            "validation_target_instance",
+                        )
+                    else: 
+                        self._log_wandb_images(
+                            target.cpu().numpy()[0].squeeze(),
+                            "target_image",
+                            "validation_target",
+                        )
                     #self._log_images(input, target, output, 'val_')
 
                 eval_score = self.eval_criterion(output, target)
