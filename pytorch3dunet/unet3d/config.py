@@ -59,6 +59,23 @@ def load_config():
     return config, config_path
 
 
+def load_config_direct(config_path):
+    config = yaml.safe_load(open(config_path, 'r'))
+
+    device = config.get('device', None)
+    if device == 'cpu':
+        logger.warning('CPU mode forced in config, this will likely result in slow training/prediction')
+        config['device'] = 'cpu'
+        return config
+
+    if torch.cuda.is_available():
+        config['device'] = 'cuda'
+    else:
+        logger.warning('CUDA not available, using CPU')
+        config['device'] = 'cpu'
+    return config, config_path
+
+
 def copy_config(config, config_path):
     """Copies the config file to the checkpoint folder."""
 
