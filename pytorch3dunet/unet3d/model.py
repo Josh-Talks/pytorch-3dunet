@@ -40,11 +40,12 @@ class AbstractUNet(nn.Module):
             Default: 'default' (chooses automatically)
         dropout_prob (float or tuple): dropout probability, default: 0.1
         is3d (bool): if True the model is 3D, otherwise 2D, default: True
+        feature_return (bool): if True return output along with list of decoder features, default: False
     """
 
     def __init__(self, in_channels, out_channels, final_sigmoid, basic_module, f_maps=64, layer_order='gcr',
                  num_groups=8, num_levels=4, is_segmentation=True, conv_kernel_size=3, pool_kernel_size=2,
-                 conv_padding=1, conv_upscale=2, upsample='default', dropout_prob=0.1, is3d=True):
+                 conv_padding=1, conv_upscale=2, upsample='default', dropout_prob=0.1, is3d=True, feature_return=False):
         super(AbstractUNet, self).__init__()
 
         if isinstance(f_maps, int):
@@ -80,6 +81,9 @@ class AbstractUNet(nn.Module):
         else:
             # regression problem
             self.final_activation = None
+        
+        #set feature return mode, if true return output along with list of decoder features
+        self.feature_return = feature_return
 
     def forward(self, x):
         # encoder part
@@ -94,10 +98,13 @@ class AbstractUNet(nn.Module):
         encoders_features = encoders_features[1:]
 
         # decoder part
+        decoder_features = []
         for decoder, encoder_features in zip(self.decoders, encoders_features):
             # pass the output from the corresponding encoder and the output
             # of the previous decoder
             x = decoder(encoder_features, x)
+            # save the decoder outputs in the original order
+            decoder_features.append(x)
 
         x = self.final_conv(x)
 
@@ -105,8 +112,12 @@ class AbstractUNet(nn.Module):
         # During training the network outputs logits
         if not self.training and self.final_activation is not None:
             x = self.final_activation(x)
-
-        return x
+        
+        if self.feature_return:
+            return x, decoder_features
+        
+        else:
+            return x
 
 
 class UNet3D(AbstractUNet):
@@ -201,7 +212,7 @@ class UNet2D(AbstractUNet):
 
     def __init__(self, in_channels, out_channels, final_sigmoid=True, f_maps=64, layer_order='gcr',
                  num_groups=8, num_levels=4, is_segmentation=True, conv_padding=1,
-                 conv_upscale=2, upsample='default', dropout_prob=0.1, **kwargs):
+                 conv_upscale=2, upsample='default', dropout_prob=0.1, feature_return=False, **kwargs):
         super(UNet2D, self).__init__(in_channels=in_channels,
                                      out_channels=out_channels,
                                      final_sigmoid=final_sigmoid,
@@ -215,7 +226,10 @@ class UNet2D(AbstractUNet):
                                      conv_upscale=conv_upscale,
                                      upsample=upsample,
                                      dropout_prob=dropout_prob,
-                                     is3d=False)
+                                     is3d=False,
+                                     feature_return=feature_return
+                                     )
+        
 
 
 class ResidualUNet2D(AbstractUNet):
