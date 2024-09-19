@@ -50,6 +50,7 @@ class _AbstractPredictor:
         save_suffix: str = "_predictions",
         output_file_name: Optional[str] = None,
         log_images: bool = False,
+        layer_id: Optional[int] = None,
         **kwargs,
     ):
         """
@@ -71,6 +72,7 @@ class _AbstractPredictor:
         self.save_suffix = save_suffix
         self.output_file_name = output_file_name
         self.log_images = log_images
+        self.layer_id = layer_id
 
     def __call__(self, test_loader):
         raise NotImplementedError
@@ -530,6 +532,209 @@ class PatchWisePredictor(_AbstractPredictor):
         output_file.create_dataset(
             "patch_index",
             data=np.array(patch_indices),
+            compression="gzip",
+        )
+    
+    def _log_wandb_images(self, image_data, caption, log_name, pred_step):
+        formatted_image = (image_data * 255 / np.max(image_data)).astype("uint8")
+        image = wandb.Image(
+            im.fromarray(formatted_image),
+            caption=caption,
+        )
+        wandb.log({log_name: image}, step=pred_step)
+
+
+class PatchWiseFeatureExtractor(_AbstractPredictor):
+    """
+    Applies the model on the given dataset and saves the result as H5 file.
+    Predictions from the network are kept in memory. If the results from the network don't fit in into RAM
+    use `LazyPredictor` instead.
+
+    The output dataset names inside the H5 is given by `output_dataset` config argument.
+    """
+
+    def __init__(
+        self,
+        model: nn.Module,
+        output_dir: str,
+        out_channels: int,
+        output_dataset: str = "predictions",
+        save_segmentation: bool = False,
+        prediction_channel: int = None,
+        save_suffix: str = "_predictions",
+        output_file_name: Optional[str] = None,
+        log_images: bool = False,
+        layer_id: int = 2,
+        **kwargs,
+    ):
+        super().__init__(
+            model,
+            output_dir,
+            out_channels,
+            output_dataset,
+            save_segmentation,
+            prediction_channel,
+            save_suffix,
+            output_file_name,
+            log_images,
+            layer_id,
+            **kwargs,
+        )
+
+    def __call__(self, test_loader):
+        assert isinstance(test_loader.dataset, AbstractHDF5Dataset)
+        logger.info(f"Processing '{test_loader.dataset.file_path}'...")
+        start = time.perf_counter()
+
+        logger.info(f"Running inference on {len(test_loader)} batches")
+        # dimensionality of the output predictions
+        # volume_shape = test_loader.dataset.volume_shape()
+        patch_count = test_loader.dataset.__len__()
+        # get patch shape
+        patch_shape = test_loader.dataset.get_patch_shape()
+        if self.prediction_channel is not None:
+            # single channel prediction map
+            prediction_maps_shape = (patch_count, 1, *patch_shape)
+        else:
+            prediction_maps_shape = (patch_count, self.out_channels, *patch_shape)
+
+        logger.info(
+            f"The shape of the output prediction maps (Number of patches, C, D, H, W): {prediction_maps_shape}"
+        )
+        # create destination H5 file
+        output_file = _get_output_file(
+            dataset=test_loader.dataset,
+            suffix=self.save_suffix,
+            output_dir=self.output_dir,
+            file_name=self.output_file_name,
+        )
+        with h5py.File(output_file, "w") as h5_output_file:
+            # allocate output prediction arrays
+            logger.info("Allocating prediction arrays...")
+            prediction_map = np.zeros(prediction_maps_shape, dtype="float32")
+            # intialise list to save patch location indices
+            patch_indices = []
+
+            # initialize feature map list to save feature maps
+            feature_map = []
+
+            # determine halo used for padding
+            patch_halo = test_loader.dataset.halo_shape
+
+            # Sets the module in evaluation mode explicitly
+            # It is necessary for batchnorm/dropout layers if present as well as final Sigmoid/Softmax to be applied
+            self.model.eval()
+            # Run predictions on the entire input dataset
+            with torch.no_grad():
+                for i, (input, indices) in enumerate(tqdm(test_loader)):
+                    # send batch to gpu
+                    if torch.cuda.is_available():
+                        input = input.pin_memory().cuda(non_blocking=True)
+
+                    if _is_2d_model(self.model):
+                        # remove the singleton z-dimension from the input
+                        input = torch.squeeze(input, dim=-3)
+                        if self.log_images:
+                            self._log_wandb_images(
+                                input[0].cpu().numpy().squeeze(),
+                                f"input_{i}",
+                                "input_images",
+                                i,
+                            )
+                        # forward pass
+                        prediction, features = self.model(input)
+                        if self.log_images:
+                            self._log_wandb_images(
+                                prediction[0].cpu().numpy().squeeze(),
+                                f"prediction_{i}",
+                                "padded_prediction",
+                                i,
+                            )
+                            self._log_wandb_images(
+                                features[self.layer_id][0].cpu().numpy().squeeze(),
+                                f"feature_{i}",
+                                "feature_maps",
+                                i,
+                            )
+                        # add the singleton z-dimension to the output
+                        prediction = torch.unsqueeze(prediction, dim=-3)
+                    else:
+                        # forward pass
+                        prediction, features = self.model(input)
+
+                    # unpad the predicted patch
+                    prediction = remove_padding(prediction, patch_halo)
+
+                    if self.log_images:
+                        self._log_wandb_images(
+                            prediction[0].cpu().numpy().squeeze(),
+                            f"unpadded_prediction_{i}",
+                            "unpadded_prediction",
+                            i,
+                        )
+
+                    # convert prediction to numpy array
+                    prediction = prediction.cpu().numpy()
+
+                    # convert features to numpy array
+                    #features = [f.cpu().numpy() for f in features]
+                    features = features[self.layer_id].cpu().numpy()
+                    # for each batch sample
+                    for j, (pred, patch_index) in enumerate(zip(prediction, indices)):
+                        # save patch index: (C,D,H,W)
+                        if self.prediction_channel is None:
+                            channel_slice = slice(0, self.out_channels)
+                        else:
+                            # use only the specified channel
+                            channel_slice = slice(0, 1)
+                            pred = np.expand_dims(pred[self.prediction_channel], axis=0)
+
+                        patch_count_slice = slice(
+                            i * test_loader.batch_size + j,
+                            ((i * test_loader.batch_size) + j + 1),
+                        )
+                        # add channel dimension to the index
+                        index = (
+                            patch_count_slice,
+                            channel_slice,
+                        )
+                        pred = np.expand_dims(pred, axis=0)
+                        # accumulate probabilities into the output prediction array
+                        prediction_map[*index] = pred
+                        # save patch location indices
+                        patch_indices.append(
+                            [
+                                [patch_index[0].start, patch_index[0].stop],
+                                [patch_index[1].start, patch_index[1].stop],
+                                [patch_index[2].start, patch_index[2].stop],
+                            ]
+                        )
+                        # save feature maps
+                        feature_map.append(features[j])
+            logger.info(
+                f"Finished inference in {time.perf_counter() - start:.2f} seconds"
+            )
+            # save results
+            output_type = (
+                "segmentation" if self.save_segmentation else "probability maps"
+            )
+            logger.info(f"Saving {output_type} to: {output_file}")
+            self._save_results(prediction_map, patch_indices, feature_map, h5_output_file)
+
+    def _save_results(self, prediction_map, patch_indices, feature_map, output_file):
+        output_file.create_dataset(
+            self.output_dataset,
+            data=prediction_map,
+            compression="gzip",
+        )
+        output_file.create_dataset(
+            "patch_index",
+            data=np.array(patch_indices),
+            compression="gzip",
+        )
+        output_file.create_dataset(
+            "feature_maps",
+            data=np.array(feature_map),
             compression="gzip",
         )
     
