@@ -359,3 +359,9 @@ def remove_padding(m, padding_shape):
 
     # Correctly construct slice objects for each dimension in padding_shape and apply them to m.
     return m[(..., *(slice(p, -p or None) for p in padding_shape))]
+
+
+def get_roi_slice(roi):
+    # Create a tuple of slice objects based on the input list
+    slices = tuple(slice(start, stop) for start, stop in roi)
+    return slices

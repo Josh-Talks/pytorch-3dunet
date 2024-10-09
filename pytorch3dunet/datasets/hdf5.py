@@ -5,7 +5,7 @@ from itertools import chain
 import h5py
 
 import pytorch3dunet.augment.transforms as transforms
-from pytorch3dunet.datasets.utils import get_slice_builder, ConfigDataset, calculate_stats, mirror_pad
+from pytorch3dunet.datasets.utils import get_slice_builder, ConfigDataset, calculate_stats, mirror_pad, get_roi_slice
 from pytorch3dunet.unet3d.utils import get_logger
 
 logger = get_logger('HDF5Dataset')
@@ -51,7 +51,7 @@ class AbstractHDF5Dataset(ConfigDataset):
 
         self.phase = phase
         self.file_path = file_path
-        self.roi = roi
+        self.roi = get_roi_slice(roi)
         self.raw_internal_path = raw_internal_path
         self.label_internal_path = label_internal_path
         self.weight_internal_path = weight_internal_path
@@ -61,7 +61,10 @@ class AbstractHDF5Dataset(ConfigDataset):
         if global_normalization:
             logger.info('Calculating mean and std of the raw data...')
             with h5py.File(file_path, 'r') as f:
-                raw = f[raw_internal_path][:]
+                if self.roi is not None:
+                    raw = f[raw_internal_path][self.roi]
+                else:
+                    raw = f[raw_internal_path][:]
                 if global_percentiles is not None:
                     stats = calculate_stats(
                         raw, 
@@ -101,13 +104,9 @@ class AbstractHDF5Dataset(ConfigDataset):
 
         with h5py.File(file_path, 'r') as f:
             if self.roi is not None:
-                raw = f[raw_internal_path][
-                        roi[0][0] : roi[0][1], 
-                        roi[1][0] : roi[1][1], 
-                        roi[2][0] : roi[2][1]
-                        ]
-                label = f[label_internal_path][roi[0][0] : roi[0][1], roi[1][0] : roi[1][1], roi[2][0] : roi[2][1]] if phase != 'test' else None
-                weight_map = f[weight_internal_path][roi[0][0] : roi[0][1], roi[1][0] : roi[1][1], roi[2][0] : roi[2][1]] if weight_internal_path is not None else None
+                raw = f[raw_internal_path][self.roi]
+                label = f[label_internal_path][self.roi] if phase != 'test' else None
+                weight_map = f[weight_internal_path][self.roi] if weight_internal_path is not None else None
             else:
                 raw = f[raw_internal_path]
                 label = f[label_internal_path] if phase != 'test' else None
