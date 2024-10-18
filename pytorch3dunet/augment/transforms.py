@@ -939,6 +939,9 @@ class Identity:
 
 
 class RgbToLabel:
+    def __init__(self, **kwargs):
+        pass
+
     def __call__(self, img):
         img = np.array(img)
         assert img.ndim == 3 and img.shape[2] == 3
