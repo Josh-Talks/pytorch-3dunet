@@ -365,3 +365,8 @@ def get_roi_slice(roi):
     # Create a tuple of slice objects based on the input list
     slices = tuple(slice(start, stop) for start, stop in roi)
     return slices
+
+
+def read_file_names(path):
+    with open(path, 'r') as f:
+        return f.read().splitlines()
