@@ -306,11 +306,11 @@ class DSB2018Predictor(_AbstractPredictor):
         output_dir,
         config,
         save_segmentation=True,
-        pmaps_thershold=0.5,
+        pmaps_threshold=0.5,
         **kwargs,
     ):
         super().__init__(model, output_dir, config, **kwargs)
-        self.pmaps_threshold = pmaps_thershold
+        self.pmaps_threshold = pmaps_threshold
         self.save_segmentation = save_segmentation
 
     def _slice_from_pad(self, pad):
@@ -323,7 +323,7 @@ class DSB2018Predictor(_AbstractPredictor):
         # Sets the module in evaluation mode explicitly
         self.model.eval()
         # initial process pool for saving results to disk
-        executor = futures.ProcessPoolExecutor(max_workers=32)
+        #executor = futures.ProcessPoolExecutor(max_workers=32)
         # Run predictions on the entire input dataset
         with torch.no_grad():
             for img, path in test_loader:
@@ -331,12 +331,23 @@ class DSB2018Predictor(_AbstractPredictor):
                 if torch.cuda.is_available():
                     img = img.cuda(non_blocking=True)
                 # forward pass
-                pred = self.model(img)
+                if _is_2d_model(self.model):
+                    # remove the singleton z-dimension from the input
+                    img = torch.squeeze(img, dim=-3)
+                    # forward pass
+                    pred = self.model(img)
+                    # add the singleton z-dimension to the output
+                    pred= torch.unsqueeze(pred, dim=-3)
+                else:
+                    # forward pass
+                    pred = self.model(img)
+                
+                dsb_save_batch(self.output_dir, path, pred, self.save_segmentation, self.pmaps_threshold)
 
-                executor.submit(dsb_save_batch, self.output_dir, path)
+                #executor.submit(dsb_save_batch, self.output_dir, path)
 
-        print("Waiting for all predictions to be saved to disk...")
-        executor.shutdown(wait=True)
+        #print("Waiting for all predictions to be saved to disk...")
+        #executor.shutdown(wait=True)
 
 
 def dsb_save_batch(output_dir, path, pred, save_segmentation=True, pmaps_thershold=0.5):
@@ -347,7 +358,8 @@ def dsb_save_batch(output_dir, path, pred, save_segmentation=True, pmaps_thersho
     # convert to numpy array
     for single_pred, single_path in zip(pred, path):
         logger.info(f"Processing {single_path}")
-        single_pred = single_pred.squeeze()
+        single_pred = single_pred.cpu().numpy().squeeze()
+        #single_pred = single_pred.squeeze()
 
         # save to h5 file
         out_file = os.path.splitext(single_path)[0] + "_predictions.h5"
