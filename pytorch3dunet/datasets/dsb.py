@@ -98,7 +98,7 @@ class DSB2018Dataset(ConfigDataset):
         # load files to process
         file_paths = phase_config["file_paths"]
         expand_dims = dataset_config.get("expand_dims", True)
-        return [cls(file_paths[0], phase, transformer_config, expand_dims)]
+        return [cls(file_paths[0], phase, transformer_config, expand_dims, dataset_config.get("global_norm", False), dataset_config.get("global_percentiles", None))]
 
     @staticmethod
     def _load_files(dir, expand_dims):
@@ -194,7 +194,16 @@ class HoechstDataset(ConfigDataset):
         # load files to process
         file_paths = phase_config["file_paths"]
         expand_dims = dataset_config.get("expand_dims", True)
-        return [cls(file_paths[0], phase, transformer_config, expand_dims)]
+        return [
+            cls(
+                file_paths[0], 
+                phase,
+                transformer_config, 
+                expand_dims, 
+                dataset_config.get("global_norm", False),
+                dataset_config.get("global_percentiles", None)
+            )
+        ]
 
     @staticmethod
     def _load_files(dir, expand_dims, rgb):
@@ -299,7 +308,17 @@ class BBBC039Dataset(ConfigDataset):
         # load files to process
         file_paths = phase_config["file_paths"]
         expand_dims = dataset_config.get("expand_dims", True)
-        return [cls(file_paths[0], phase, transformer_config, expand_dims)]
+        
+        return [
+            cls(
+                file_paths[0], 
+                phase, 
+                transformer_config, 
+                expand_dims, 
+                dataset_config.get("global_norm", False),
+                dataset_config.get("global_percentiles", None)
+            )
+        ]
 
     @staticmethod
     def _load_files(dir, file_names, expand_dims, file_type):
