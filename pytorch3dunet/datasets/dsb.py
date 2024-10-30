@@ -218,7 +218,13 @@ class BBBC039Dataset(ConfigDataset):
         self.file_path = images_dir
 
         if global_norm:
-            stats = calculate_stats(self.images, False, global_percentiles[0], global_percentiles[1])
+            if global_percentiles is None:
+                percentile_min = None
+                percentile_max = None
+            else:
+                percentile_min = global_percentiles[0]
+                percentile_max = global_percentiles[1]
+            stats = calculate_stats(self.images, False, percentile_min, percentile_max)
         else:
             stats = calculate_stats(self.images, True)
 
