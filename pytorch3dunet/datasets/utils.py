@@ -1,5 +1,5 @@
 import collections
-from typing import Any
+from typing import Any, Optional
 
 import numpy as np
 import torch
@@ -287,7 +287,7 @@ def default_prediction_collate(batch):
     raise TypeError((error_msg.format(type(batch[0]))))
 
 
-def calculate_stats(img: np.array, skip: bool = False, percentile_min=1, percentile_max=99.6) -> dict[str, Any]:
+def calculate_stats(img: np.array, skip: bool = False, percentile_min:Optional[int]=None, percentile_max:Optional[int]=None) -> dict[str, Any]:
     """
     Calculates the minimum percentile, maximum percentile, mean, and standard deviation of the image.
 
@@ -299,7 +299,17 @@ def calculate_stats(img: np.array, skip: bool = False, percentile_min=1, percent
         tuple[float, float, float, float]: The minimum percentile, maximum percentile, mean, and std dev
     """
     if not skip:
-        pmin, pmax, mean, std = np.percentile(img, percentile_min), np.percentile(img, percentile_max), np.mean(img), np.std(img)
+        mean = np.mean(img)
+        std = np.std(img)
+        if percentile_min is not None:
+            pmin = np.percentile(img, percentile_min)
+        else:
+            pmin = None
+        if percentile_max is not None:
+            pmax = np.percentile(img, percentile_max)
+        else:
+            pmax = None
+
     else:
         pmin, pmax, mean, std = None, None, None, None
 
