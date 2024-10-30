@@ -32,7 +32,7 @@ def dsb_prediction_collate(batch):
 
 
 class DSB2018Dataset(ConfigDataset):
-    def __init__(self, root_dir, phase, transformer_config, expand_dims=True):
+    def __init__(self, root_dir, phase, transformer_config, expand_dims=True, global_norm=False, global_percentiles=None):
         assert os.path.isdir(root_dir), f"{root_dir} is not a directory"
         assert phase in ["train", "val", "test"]
 
@@ -44,7 +44,16 @@ class DSB2018Dataset(ConfigDataset):
         self.images, self.paths = self._load_files(images_dir, expand_dims)
         self.file_path = images_dir
 
-        stats = calculate_stats(self.images, True)
+        if global_norm:
+            if global_percentiles is None:
+                percentile_min = None
+                percentile_max = None
+            else:
+                percentile_min = global_percentiles[0]
+                percentile_max = global_percentiles[1]
+            stats = calculate_stats(self.images, False, percentile_min, percentile_max)
+        else:
+            stats = calculate_stats(self.images, True)
 
         transformer = transforms.Transformer(transformer_config, stats)
 
@@ -111,7 +120,15 @@ class DSB2018Dataset(ConfigDataset):
 
 
 class HoechstDataset(ConfigDataset):
-    def __init__(self, root_dir, phase, transformer_config, expand_dims=True):
+    def __init__(
+        self, 
+        root_dir, 
+        phase, 
+        transformer_config, 
+        expand_dims=True, 
+        global_norm=False,
+        global_percentiles=None
+    ):
         assert os.path.isdir(root_dir), f"{root_dir} is not a directory"
         assert phase in ["train", "val", "test"]
 
@@ -123,7 +140,16 @@ class HoechstDataset(ConfigDataset):
         self.images, self.paths = self._load_files(images_dir, expand_dims, rgb=False)
         self.file_path = images_dir
 
-        stats = calculate_stats(self.images, True)
+        if global_norm:
+            if global_percentiles is None:
+                percentile_min = None
+                percentile_max = None
+            else:
+                percentile_min = global_percentiles[0]
+                percentile_max = global_percentiles[1]
+            stats = calculate_stats(self.images, False, percentile_min, percentile_max)
+        else:
+            stats = calculate_stats(self.images, True)
 
         transformer = transforms.Transformer(transformer_config, stats)
 
