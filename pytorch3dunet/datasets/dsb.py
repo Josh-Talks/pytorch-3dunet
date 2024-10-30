@@ -192,7 +192,15 @@ class HoechstDataset(ConfigDataset):
 
 
 class BBBC039Dataset(ConfigDataset):
-    def __init__(self, file_names_path, phase, transformer_config, expand_dims=True):
+    def __init__(
+        self,
+        file_names_path,
+        phase,
+        transformer_config,
+        expand_dims=True,
+        global_norm=False,
+        global_percentiles=None,
+    ):
         base_dir = os.path.dirname(file_names_path)
         assert os.path.isdir(base_dir), f"{base_dir} is not a directory"
         assert phase in ["train", "val", "test"]
@@ -209,7 +217,10 @@ class BBBC039Dataset(ConfigDataset):
         )
         self.file_path = images_dir
 
-        stats = calculate_stats(self.images, True)
+        if global_norm:
+            stats = calculate_stats(self.images, False, global_percentiles[0], global_percentiles[1])
+        else:
+            stats = calculate_stats(self.images, True)
 
         transformer = transforms.Transformer(transformer_config, stats)
 
