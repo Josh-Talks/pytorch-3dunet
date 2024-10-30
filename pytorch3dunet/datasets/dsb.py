@@ -32,7 +32,7 @@ def dsb_prediction_collate(batch):
 
 
 class DSB2018Dataset(ConfigDataset):
-    def __init__(self, root_dir, phase, transformer_config, expand_dims=True, global_norm=False, global_percentiles=None):
+    def __init__(self, root_dir, phase, transformer_config, expand_dims=True, global_norm=False, percentiles=None):
         assert os.path.isdir(root_dir), f"{root_dir} is not a directory"
         assert phase in ["train", "val", "test"]
 
@@ -44,16 +44,16 @@ class DSB2018Dataset(ConfigDataset):
         self.images, self.paths = self._load_files(images_dir, expand_dims)
         self.file_path = images_dir
 
+        if percentiles is None:
+            percentile_min = None
+            percentile_max = None
+        else:
+            percentile_min = percentiles[0]
+            percentile_max = percentiles[1]
         if global_norm:
-            if global_percentiles is None:
-                percentile_min = None
-                percentile_max = None
-            else:
-                percentile_min = global_percentiles[0]
-                percentile_max = global_percentiles[1]
             stats = calculate_stats(self.images, False, percentile_min, percentile_max)
         else:
-            stats = calculate_stats(self.images, True)
+            stats = calculate_stats(self.images, True, percentile_min, percentile_max)
 
         transformer = transforms.Transformer(transformer_config, stats)
 
@@ -98,7 +98,7 @@ class DSB2018Dataset(ConfigDataset):
         # load files to process
         file_paths = phase_config["file_paths"]
         expand_dims = dataset_config.get("expand_dims", True)
-        return [cls(file_paths[0], phase, transformer_config, expand_dims, dataset_config.get("global_norm", False), dataset_config.get("global_percentiles", None))]
+        return [cls(file_paths[0], phase, transformer_config, expand_dims, dataset_config.get("global_norm", False), dataset_config.get("percentiles", None))]
 
     @staticmethod
     def _load_files(dir, expand_dims):
@@ -127,7 +127,7 @@ class HoechstDataset(ConfigDataset):
         transformer_config, 
         expand_dims=True, 
         global_norm=False,
-        global_percentiles=None
+        percentiles=None
     ):
         assert os.path.isdir(root_dir), f"{root_dir} is not a directory"
         assert phase in ["train", "val", "test"]
@@ -140,16 +140,16 @@ class HoechstDataset(ConfigDataset):
         self.images, self.paths = self._load_files(images_dir, expand_dims, rgb=False)
         self.file_path = images_dir
 
+        if percentiles is None:
+            percentile_min = None
+            percentile_max = None
+        else:
+            percentile_min = percentiles[0]
+            percentile_max = percentiles[1]
         if global_norm:
-            if global_percentiles is None:
-                percentile_min = None
-                percentile_max = None
-            else:
-                percentile_min = global_percentiles[0]
-                percentile_max = global_percentiles[1]
             stats = calculate_stats(self.images, False, percentile_min, percentile_max)
         else:
-            stats = calculate_stats(self.images, True)
+            stats = calculate_stats(self.images, True, percentile_min, percentile_max)
 
         transformer = transforms.Transformer(transformer_config, stats)
 
@@ -201,7 +201,7 @@ class HoechstDataset(ConfigDataset):
                 transformer_config, 
                 expand_dims, 
                 dataset_config.get("global_norm", False),
-                dataset_config.get("global_percentiles", None)
+                dataset_config.get("percentiles", None)
             )
         ]
 
@@ -234,7 +234,7 @@ class BBBC039Dataset(ConfigDataset):
         transformer_config,
         expand_dims=True,
         global_norm=False,
-        global_percentiles=None,
+        percentiles=None,
     ):
         base_dir = os.path.dirname(file_names_path)
         assert os.path.isdir(base_dir), f"{base_dir} is not a directory"
@@ -252,16 +252,16 @@ class BBBC039Dataset(ConfigDataset):
         )
         self.file_path = images_dir
 
+        if percentiles is None:
+            percentile_min = None
+            percentile_max = None
+        else:
+            percentile_min = percentiles[0]
+            percentile_max = percentiles[1]
         if global_norm:
-            if global_percentiles is None:
-                percentile_min = None
-                percentile_max = None
-            else:
-                percentile_min = global_percentiles[0]
-                percentile_max = global_percentiles[1]
             stats = calculate_stats(self.images, False, percentile_min, percentile_max)
         else:
-            stats = calculate_stats(self.images, True)
+            stats = calculate_stats(self.images, True, percentile_min, percentile_max)
 
         transformer = transforms.Transformer(transformer_config, stats)
 
@@ -316,7 +316,7 @@ class BBBC039Dataset(ConfigDataset):
                 transformer_config, 
                 expand_dims, 
                 dataset_config.get("global_norm", False),
-                dataset_config.get("global_percentiles", None)
+                dataset_config.get("percentiles", None)
             )
         ]
 
