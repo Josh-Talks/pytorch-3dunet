@@ -3,6 +3,9 @@
 .ipynb_checkpoints
 .vscode
 
+# Data files
+*.npz
+
 # Byte-compiled / optimized / DLL files
 __pycache__/
 *.py[cod]
