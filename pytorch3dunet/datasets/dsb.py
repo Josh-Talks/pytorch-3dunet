@@ -32,7 +32,15 @@ def dsb_prediction_collate(batch):
 
 
 class DSB2018Dataset(ConfigDataset):
-    def __init__(self, root_dir, phase, transformer_config, expand_dims=True, global_norm=False, percentiles=None):
+    def __init__(
+        self,
+        root_dir,
+        phase,
+        transformer_config,
+        expand_dims=True,
+        global_norm=False,
+        percentiles=None,
+    ):
         assert os.path.isdir(root_dir), f"{root_dir} is not a directory"
         assert phase in ["train", "val", "test"]
 
@@ -98,13 +106,22 @@ class DSB2018Dataset(ConfigDataset):
         # load files to process
         file_paths = phase_config["file_paths"]
         expand_dims = dataset_config.get("expand_dims", True)
-        return [cls(file_paths[0], phase, transformer_config, expand_dims, dataset_config.get("global_norm", False), dataset_config.get("percentiles", None))]
+        return [
+            cls(
+                file_paths[0],
+                phase,
+                transformer_config,
+                expand_dims,
+                dataset_config.get("global_norm", False),
+                dataset_config.get("percentiles", None),
+            )
+        ]
 
     @staticmethod
     def _load_files(dir, expand_dims):
         files_data = []
         paths = []
-        for file in os.listdir(dir):
+        for file in sorted(os.listdir(dir)):
             path = os.path.join(dir, file)
             img = np.asarray(imageio.imread(path))
             if expand_dims:
@@ -121,13 +138,13 @@ class DSB2018Dataset(ConfigDataset):
 
 class HoechstDataset(ConfigDataset):
     def __init__(
-        self, 
-        root_dir, 
-        phase, 
-        transformer_config, 
-        expand_dims=True, 
+        self,
+        root_dir,
+        phase,
+        transformer_config,
+        expand_dims=True,
         global_norm=False,
-        percentiles=None
+        percentiles=None,
     ):
         assert os.path.isdir(root_dir), f"{root_dir} is not a directory"
         assert phase in ["train", "val", "test"]
@@ -196,12 +213,12 @@ class HoechstDataset(ConfigDataset):
         expand_dims = dataset_config.get("expand_dims", True)
         return [
             cls(
-                file_paths[0], 
+                file_paths[0],
                 phase,
-                transformer_config, 
-                expand_dims, 
+                transformer_config,
+                expand_dims,
                 dataset_config.get("global_norm", False),
-                dataset_config.get("percentiles", None)
+                dataset_config.get("percentiles", None),
             )
         ]
 
@@ -209,7 +226,7 @@ class HoechstDataset(ConfigDataset):
     def _load_files(dir, expand_dims, rgb):
         files_data = []
         paths = []
-        for file in os.listdir(dir):
+        for file in sorted(os.listdir(dir)):
             path = os.path.join(dir, file)
             img = np.asarray(imageio.imread(path))
             if rgb:
@@ -308,15 +325,15 @@ class BBBC039Dataset(ConfigDataset):
         # load files to process
         file_paths = phase_config["file_paths"]
         expand_dims = dataset_config.get("expand_dims", True)
-        
+
         return [
             cls(
-                file_paths[0], 
-                phase, 
-                transformer_config, 
-                expand_dims, 
+                file_paths[0],
+                phase,
+                transformer_config,
+                expand_dims,
                 dataset_config.get("global_norm", False),
-                dataset_config.get("percentiles", None)
+                dataset_config.get("percentiles", None),
             )
         ]
 
