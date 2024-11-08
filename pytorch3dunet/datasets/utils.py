@@ -211,6 +211,7 @@ def get_train_loaders(config):
     num_workers = loaders_config.get('num_workers', 1)
     logger.info(f'Number of workers for train/val dataloader: {num_workers}')
     batch_size = loaders_config.get('batch_size', 1)
+    batch_size_val = loaders_config.get('batch_size_val', batch_size)
     if torch.cuda.device_count() > 1 and not config['device'] == 'cpu':
         logger.info(
             f'{torch.cuda.device_count()} GPUs available. Using batch_size = {torch.cuda.device_count()} * {batch_size}')
@@ -222,7 +223,7 @@ def get_train_loaders(config):
         'train': DataLoader(ConcatDataset(train_datasets), batch_size=batch_size, shuffle=True, pin_memory=True,
                             num_workers=num_workers),
         # don't shuffle during validation: useful when showing how predictions for a given batch get better over time
-        'val': DataLoader(ConcatDataset(val_datasets), batch_size=batch_size, shuffle=False, pin_memory=True,
+        'val': DataLoader(ConcatDataset(val_datasets), batch_size=batch_size_val, shuffle=False, pin_memory=True,
                           num_workers=num_workers)
     }
 
