@@ -318,7 +318,9 @@ def calculate_stats(img: np.array, skip: bool = False, percentile_min:Optional[i
         'pmin': pmin,
         'pmax': pmax,
         'mean': mean,
-        'std': std
+        'std': std,
+        'percentile_min': percentile_min,
+        'percentile_max': percentile_max
     }
 
 
