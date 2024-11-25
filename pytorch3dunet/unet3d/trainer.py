@@ -369,6 +369,16 @@ class UNetTrainer:
                 eval_score = self.eval_criterion(output, target)
                 val_scores.update(eval_score.item(), self._batch_size(input))
 
+                # debug code to check outputs
+                """
+                np.savez(
+                    f"/g/kreshuk/talks/pytorch-3dunet/test_outputs/val{i}_data.npz",
+                    input = input.cpu().numpy(),
+                    target = target.cpu().numpy(),
+                    output = output.cpu().numpy(),
+                    eval_score = eval_score,
+                )
+                """
                 if self.validate_iters is not None and self.validate_iters <= i:
                     # stop validation
                     break
