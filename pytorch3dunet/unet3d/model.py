@@ -41,11 +41,13 @@ class AbstractUNet(nn.Module):
         dropout_prob (float or tuple): dropout probability, default: 0.1
         is3d (bool): if True the model is 3D, otherwise 2D, default: True
         feature_return (bool): if True return output along with list of decoder features, default: False
+        feature_perturbation (Optional[Dict]): dictionary containing feature perturbation parameters, default: None
     """
 
     def __init__(self, in_channels, out_channels, final_sigmoid, basic_module, f_maps=64, layer_order='gcr',
                  num_groups=8, num_levels=4, is_segmentation=True, conv_kernel_size=3, pool_kernel_size=2,
-                 conv_padding=1, conv_upscale=2, upsample='default', dropout_prob=0.1, is3d=True, feature_return=False):
+                 conv_padding=1, conv_upscale=2, upsample='default', dropout_prob=0.1, is3d=True, feature_return=False,
+                 feature_perturbation=None):
         super(AbstractUNet, self).__init__()
 
         if isinstance(f_maps, int):
@@ -84,6 +86,14 @@ class AbstractUNet(nn.Module):
         
         #set feature return mode, if true return output along with list of decoder features
         self.feature_return = feature_return
+        #set feature perturbation mode, if not None apply feature perturbation
+        if feature_perturbation is not None:
+            perturbation_class = get_class(feature_perturbation['name'], 
+                modules=['pytorch3dunet.unet3d.feature_perturbation']
+            )
+            self.feature_perturbation = perturbation_class(**feature_perturbation)
+        else:
+            self.feature_perturbation = feature_perturbation
 
     def forward(self, x):
         # encoder part
@@ -97,6 +107,8 @@ class AbstractUNet(nn.Module):
         # !!remember: it's the 1st in the list
         encoders_features = encoders_features[1:]
 
+        if self.feature_perturbation is not None:
+            x = self.feature_perturbation(x)
         # decoder part
         decoder_features = []
         for decoder, encoder_features in zip(self.decoders, encoders_features):
@@ -212,7 +224,8 @@ class UNet2D(AbstractUNet):
 
     def __init__(self, in_channels, out_channels, final_sigmoid=True, f_maps=64, layer_order='gcr',
                  num_groups=8, num_levels=4, is_segmentation=True, conv_padding=1,
-                 conv_upscale=2, upsample='default', dropout_prob=0.1, feature_return=False, **kwargs):
+                 conv_upscale=2, upsample='default', dropout_prob=0.1, feature_return=False, 
+                 feature_perturbation=None, **kwargs):
         super(UNet2D, self).__init__(in_channels=in_channels,
                                      out_channels=out_channels,
                                      final_sigmoid=final_sigmoid,
@@ -227,7 +240,8 @@ class UNet2D(AbstractUNet):
                                      upsample=upsample,
                                      dropout_prob=dropout_prob,
                                      is3d=False,
-                                     feature_return=feature_return
+                                     feature_return=feature_return,
+                                     feature_perturbation=feature_perturbation
                                      )
         
 
