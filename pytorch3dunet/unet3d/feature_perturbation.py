@@ -32,9 +32,9 @@ class FeatureDropPerturbation(nn.Module):
         return x
     
 
-class FeatureNoiseDecoder(nn.Module):
+class FeatureNoisePerturbation(nn.Module):
     def __init__(self, uniform_range=0.3, **kwargs):
-        super(FeatureNoiseDecoder, self).__init__()
+        super(FeatureNoisePerturbation, self).__init__()
         self.uni_dist = Uniform(-uniform_range, uniform_range)
 
     def feature_based_noise(self, x):
