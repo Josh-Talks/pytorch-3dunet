@@ -51,7 +51,10 @@ class AbstractHDF5Dataset(ConfigDataset):
 
         self.phase = phase
         self.file_path = file_path
-        self.roi = get_roi_slice(roi)
+        if roi is not None:
+            self.roi = get_roi_slice(roi)
+        else:
+            self.roi = roi
         self.raw_internal_path = raw_internal_path
         self.label_internal_path = label_internal_path
         self.weight_internal_path = weight_internal_path
