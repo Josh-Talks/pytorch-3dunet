@@ -91,7 +91,7 @@ class Dropout(nn.Module):
                 x.size(), generator=self.rng
             )
             > self.p
-        ).float()
+        ).float().to(x.device)
         return mask * x * (1.0 / (1 - self.p))
 
 
@@ -120,5 +120,5 @@ class Dropout2d(nn.Module):
                 generator=self.rng,
             )
             > self.p
-        ).float()
+        ).float().to(x.device)
         return mask * x * (1.0 / (1 - self.p))
