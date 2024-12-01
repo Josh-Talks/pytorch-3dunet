@@ -256,28 +256,40 @@ class StandardHDF5Dataset(AbstractHDF5Dataset):
         if self._raw is None:
             with h5py.File(self.file_path, 'r') as f:
                 assert self.raw_internal_path in f, f'Dataset {self.raw_internal_path} not found in {self.file_path}'
-                self._raw = f[self.raw_internal_path][:]
+                if self.roi is not None:
+                    self._raw = f[self.raw_internal_path][self.roi]
+                else:
+                    self._raw = f[self.raw_internal_path][:]
         return self._raw[idx]
 
     def get_label_patch(self, idx):
         if self._label is None:
             with h5py.File(self.file_path, 'r') as f:
                 assert self.label_internal_path in f, f'Dataset {self.label_internal_path} not found in {self.file_path}'
-                self._label = f[self.label_internal_path][:]
+                if self.roi is not None:
+                    self._label = f[self.label_internal_path][self.roi]
+                else:
+                    self._label = f[self.label_internal_path][:]
         return self._label[idx]
 
     def get_weight_patch(self, idx):
         if self._weight_map is None:
             with h5py.File(self.file_path, 'r') as f:
                 assert self.weight_internal_path in f, f'Dataset {self.weight_internal_path} not found in {self.file_path}'
-                self._weight_map = f[self.weight_internal_path][:]
+                if self.roi is not None:
+                    self._weight_map = f[self.weight_internal_path][self.roi]
+                else:
+                    self._weight_map = f[self.weight_internal_path][:]
         return self._weight_map[idx]
 
     def get_raw_padded_patch(self, idx):
         if self._raw_padded is None:
             with h5py.File(self.file_path, 'r') as f:
                 assert self.raw_internal_path in f, f'Dataset {self.raw_internal_path} not found in {self.file_path}'
-                self._raw_padded = mirror_pad(f[self.raw_internal_path][:], self.halo_shape)
+                if self.roi is not None:
+                    self._raw_padded = mirror_pad(f[self.raw_internal_path][self.roi], self.halo_shape)
+                else:
+                    self._raw_padded = mirror_pad(f[self.raw_internal_path][:], self.halo_shape)
         return self._raw_padded[idx]
 
 
