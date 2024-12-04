@@ -4,7 +4,7 @@ from typing import Any, Optional
 import numpy as np
 import torch
 from torch.utils.data import DataLoader, ConcatDataset, Dataset
-
+from pytorch3dunet.augment import transforms
 from pytorch3dunet.unet3d.utils import get_logger, get_class
 
 logger = get_logger('Dataset')
@@ -288,7 +288,14 @@ def default_prediction_collate(batch):
     raise TypeError((error_msg.format(type(batch[0]))))
 
 
-def calculate_stats(img: np.array, skip: bool = False, percentile_min:Optional[int]=None, percentile_max:Optional[int]=None) -> dict[str, Any]:
+def calculate_stats(
+        img: np.array, 
+        skip: bool = False, 
+        percentile_min:Optional[float]=None, 
+        percentile_max:Optional[float]=None,
+        percentile_clip:Optional[float]=None,
+        preprocessing_transform_config: Optional[dict] = None,
+    ) -> dict[str, Any]:
     """
     Calculates the minimum percentile, maximum percentile, mean, and standard deviation of the image.
 
@@ -299,28 +306,58 @@ def calculate_stats(img: np.array, skip: bool = False, percentile_min:Optional[i
     Returns:
         tuple[float, float, float, float]: The minimum percentile, maximum percentile, mean, and std dev
     """
-    if not skip:
-        mean = np.mean(img)
-        std = np.std(img)
+    if (preprocessing_transform_config is not None) | (not skip):
+        global_mean = np.mean(img)
+        global_std = np.std(img)
         if percentile_min is not None:
-            pmin = np.percentile(img, percentile_min)
+            global_pmin = np.percentile(img, percentile_min)
         else:
-            pmin = None
+            global_pmin = None
         if percentile_max is not None:
-            pmax = np.percentile(img, percentile_max)
+            global_pmax = np.percentile(img, percentile_max)
         else:
-            pmax = None
+            global_pmax = None
+
+        if not skip:
+            pmin, pmax, pclip, mean, std = global_pmin, global_pmax, None, global_mean, global_std
+        else:
+            pmin, pmax, pclip, mean, std = None, None, None, None, None
+
+        if preprocessing_transform_config is not None:
+            preprocessing_stats = {
+                'pmin': global_pmin,
+                'pmax': global_pmax,
+                'mean': global_mean,
+                'std': global_std,
+                'percentile_min': percentile_min,
+                'percentile_max': percentile_max,
+                'percentile_clip': percentile_clip,
+            }
+            transformer = transforms.Transformer(preprocessing_transform_config, preprocessing_stats)
+            # load raw images transformer
+            preprocess_raw_transform = transformer.raw_transform()
+            if isinstance(img, list):
+                img_preprocessed = [preprocess_raw_transform(i) for i in img]
+            else:
+                img_preprocessed = preprocess_raw_transform(img)
+            if percentile_clip is not None:
+                pclip = np.percentile(img_preprocessed, percentile_clip)
+            else:
+                pclip = None
 
     else:
-        pmin, pmax, mean, std = None, None, None, None
+        pmin, pmax, pclip, mean, std = None, None, None, None, None
+    
 
     return {
         'pmin': pmin,
         'pmax': pmax,
+        'pclip': pclip,
         'mean': mean,
         'std': std,
         'percentile_min': percentile_min,
-        'percentile_max': percentile_max
+        'percentile_max': percentile_max,
+        'percentile_clip': percentile_clip,
     }
 
 
