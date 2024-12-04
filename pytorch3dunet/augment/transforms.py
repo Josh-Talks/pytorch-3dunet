@@ -778,6 +778,33 @@ class PercentileNormalizer:
         return (m - pmin) / (pmax - pmin + self.eps)
 
 
+class PercentileClipping:
+    def __init__(
+        self,
+        pclip=None,
+        percentile_clip=99.9,
+        channelwise=False,
+        **kwargs,
+    ):
+        self.pclip = pclip
+        self.percentile_clip = percentile_clip
+        self.channelwise = channelwise
+
+    def __call__(self, m):
+        if self.pclip is not None:
+            pclip = self.pclip
+        else:
+            if self.channelwise:
+                axes = list(range(m.ndim))
+                # average across channels
+                axes = tuple(axes[1:])
+                pclip = np.percentile(m, self.percentile_clip, axis=axes, keepdims=True)
+            else:
+                pclip = np.percentile(m, self.percentile_clip)
+
+        return np.clip(m, a_min=None, a_max=pclip)
+
+
 class Normalize:
     """
     Apply simple min-max scaling to a given input tensor, i.e. shrinks the range of the data

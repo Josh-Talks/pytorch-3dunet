@@ -64,9 +64,11 @@ class DSB2018Dataset(ConfigDataset):
         root_dir,
         phase,
         transformer_config,
+        preprocessing_config=None,
         expand_dims=True,
         global_norm=False,
         percentiles=None,
+        percentile_clip = None,
     ):
         assert os.path.isdir(root_dir), f"{root_dir} is not a directory"
         assert phase in ["train", "val", "test"]
@@ -86,9 +88,23 @@ class DSB2018Dataset(ConfigDataset):
             percentile_min = percentiles[0]
             percentile_max = percentiles[1]
         if global_norm:
-            stats = calculate_stats(self.images, False, percentile_min, percentile_max)
+            stats = calculate_stats(
+                self.images, 
+                False, 
+                percentile_min, 
+                percentile_max,
+                percentile_clip,
+                preprocessing_config,
+            )
         else:
-            stats = calculate_stats(self.images, True, percentile_min, percentile_max)
+            stats = calculate_stats(
+                self.images, 
+                True, 
+                percentile_min, 
+                percentile_max,
+                percentile_clip,
+                preprocessing_config,
+            )
 
         transformer = transforms.Transformer(transformer_config, stats)
 
@@ -169,9 +185,11 @@ class HoechstDataset(ConfigDataset):
         root_dir,
         phase,
         transformer_config,
+        preprocessing_config=None,
         expand_dims=True,
         global_norm=False,
         percentiles=None,
+        percentile_clip = None,
     ):
         assert os.path.isdir(root_dir), f"{root_dir} is not a directory"
         assert phase in ["train", "val", "test"]
@@ -191,9 +209,23 @@ class HoechstDataset(ConfigDataset):
             percentile_min = percentiles[0]
             percentile_max = percentiles[1]
         if global_norm:
-            stats = calculate_stats(self.images, False, percentile_min, percentile_max)
+            stats = calculate_stats(
+                self.images, 
+                False, 
+                percentile_min, 
+                percentile_max,
+                percentile_clip,
+                preprocessing_config,
+            )
         else:
-            stats = calculate_stats(self.images, True, percentile_min, percentile_max)
+            stats = calculate_stats(
+                self.images, 
+                True, 
+                percentile_min, 
+                percentile_max,
+                percentile_clip,
+                preprocessing_config,
+            )
 
         transformer = transforms.Transformer(transformer_config, stats)
 
@@ -276,9 +308,11 @@ class BBBC039Dataset(ConfigDataset):
         file_names_path,
         phase,
         transformer_config,
+        preprocessing_config=None,
         expand_dims=True,
         global_norm=False,
         percentiles=None,
+        percentile_clip = None,
     ):
         base_dir = os.path.dirname(file_names_path)
         assert os.path.isdir(base_dir), f"{base_dir} is not a directory"
@@ -303,9 +337,23 @@ class BBBC039Dataset(ConfigDataset):
             percentile_min = percentiles[0]
             percentile_max = percentiles[1]
         if global_norm:
-            stats = calculate_stats(self.images, False, percentile_min, percentile_max)
+            stats = calculate_stats(
+                self.images, 
+                False, 
+                percentile_min, 
+                percentile_max,
+                percentile_clip,
+                preprocessing_config,
+            )
         else:
-            stats = calculate_stats(self.images, True, percentile_min, percentile_max)
+            stats = calculate_stats(
+                self.images, 
+                True, 
+                percentile_min, 
+                percentile_max,
+                percentile_clip,
+                preprocessing_config,
+            )
 
         transformer = transforms.Transformer(transformer_config, stats)
 
@@ -391,9 +439,11 @@ class S_BIAD634_Dataset(ConfigDataset):
         file_names_path,
         phase,
         transformer_config,
+        preprocessing_config=None,
         expand_dims=True,
         global_norm=False,
         percentiles=None,
+        percentile_clip = None,
         image_dir ='rawimages',
         label_dir = 'groundtruth',
         image_file_type = 'tif',
@@ -422,9 +472,23 @@ class S_BIAD634_Dataset(ConfigDataset):
             percentile_min = percentiles[0]
             percentile_max = percentiles[1]
         if global_norm:
-            stats = calculate_stats(self.images, False, percentile_min, percentile_max)
+            stats = calculate_stats(
+                self.images, 
+                False, 
+                percentile_min, 
+                percentile_max, 
+                percentile_clip,
+                preprocessing_config,
+            )
         else:
-            stats = calculate_stats(self.images, True, percentile_min, percentile_max)
+            stats = calculate_stats(
+                self.images, 
+                True, 
+                percentile_min, 
+                percentile_max, 
+                percentile_clip,
+                preprocessing_config,
+            )
 
         transformer = transforms.Transformer(transformer_config, stats)
 
@@ -511,9 +575,11 @@ class S_BIAD895_Dataset(ConfigDataset):
         root_dir,
         phase,
         transformer_config,
+        preprocessing_config=None,
         expand_dims=True,
         global_norm=False,
         percentiles=None,
+        percentile_clip = None,
     ):
         assert os.path.isdir(root_dir), f"{root_dir} is not a directory"
         assert phase in ["train", "val", "test"]
@@ -533,9 +599,23 @@ class S_BIAD895_Dataset(ConfigDataset):
             percentile_min = percentiles[0]
             percentile_max = percentiles[1]
         if global_norm:
-            stats = calculate_stats(self.images, False, percentile_min, percentile_max)
+            stats = calculate_stats(
+                self.images, 
+                False, 
+                percentile_min, 
+                percentile_max, 
+                percentile_clip, 
+                preprocessing_config
+            )
         else:
-            stats = calculate_stats(self.images, True, percentile_min, percentile_max)
+            stats = calculate_stats(
+                self.images, 
+                True, 
+                percentile_min, 
+                percentile_max, 
+                percentile_clip, 
+                preprocessing_config
+            )
 
         transformer = transforms.Transformer(transformer_config, stats)
 
@@ -626,7 +706,17 @@ class S_BIAD1410_Dataset(ConfigDataset):
         global_normalization (bool): if True, the mean and std of the raw data will be calculated over the whole dataset
     """
 
-    def __init__(self, file_path, roi, phase, slice_builder_config, transformer_config, label_suffix="mask", global_normalization=True, global_percentiles=None):
+    def __init__(
+        self, 
+        file_path, 
+        roi, phase, 
+        slice_builder_config, 
+        transformer_config, 
+        label_suffix="mask", 
+        global_normalization=True, 
+        global_percentiles=None,
+        
+    ):
         assert phase in ['train', 'val', 'test']
 
         self.phase = phase
