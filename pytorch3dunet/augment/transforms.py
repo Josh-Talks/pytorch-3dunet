@@ -325,10 +325,12 @@ class ElasticDeformation:
 
 
 class CropToFixed:
-    def __init__(self, random_state, size=(256, 256), centered=False, **kwargs):
+    def __init__(self, random_state, size=(256, 256), centered=False, top_left=False, **kwargs):
         self.random_state = random_state
         self.crop_y, self.crop_x = size
         self.centered = centered
+        self.top_left = top_left
+        assert not (self.centered and self.top_left), "centered and top_left cannot be both True"
 
     def __call__(self, m):
         def _padding(pad_total):
@@ -358,16 +360,22 @@ class CropToFixed:
         else:
             _, _, y, x = m.shape
 
-        if not self.centered:
+        if self.centered == True:
+            y_start, y_pad = _start_and_pad(self.crop_y, y)
+            x_start, x_pad = _start_and_pad(self.crop_x, x)
+        
+        elif self.top_left == True:
+            y_start = 0
+            x_start = 0
+            y_pad, x_pad = (0, 0)
+        
+        else:
             y_range, y_pad = _rand_range_and_pad(self.crop_y, y)
             x_range, x_pad = _rand_range_and_pad(self.crop_x, x)
 
             y_start = self.random_state.randint(y_range)
             x_start = self.random_state.randint(x_range)
 
-        else:
-            y_start, y_pad = _start_and_pad(self.crop_y, y)
-            x_start, x_pad = _start_and_pad(self.crop_x, x)
 
         if m.ndim == 3:
             result = m[
@@ -803,6 +811,15 @@ class PercentileClipping:
                 pclip = np.percentile(m, self.percentile_clip)
 
         return np.clip(m, a_min=None, a_max=pclip)
+
+
+class FixedClipping:
+    def __init__(self, min_value=None, max_value=None, **kwargs):
+        self.min_value = min_value
+        self.max_value = max_value
+    
+    def __call__(self, m):
+        return np.clip(m, a_min=self.min_value, a_max=self.max_value)
 
 
 class Normalize:
