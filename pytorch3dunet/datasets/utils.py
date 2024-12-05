@@ -293,8 +293,6 @@ def calculate_stats(
         skip: bool = False, 
         percentile_min:Optional[float]=None, 
         percentile_max:Optional[float]=None,
-        percentile_clip:Optional[float]=None,
-        preprocessing_transform_config: Optional[dict] = None,
     ) -> dict[str, Any]:
     """
     Calculates the minimum percentile, maximum percentile, mean, and standard deviation of the image.
@@ -306,58 +304,29 @@ def calculate_stats(
     Returns:
         tuple[float, float, float, float]: The minimum percentile, maximum percentile, mean, and std dev
     """
-    if (preprocessing_transform_config is not None) | (not skip):
-        global_mean = np.mean(img)
-        global_std = np.std(img)
+    if not skip:
+        mean = np.mean(img)
+        std = np.std(img)
         if percentile_min is not None:
-            global_pmin = np.percentile(img, percentile_min)
+            pmin = np.percentile(img, percentile_min)
         else:
-            global_pmin = None
+            pmin = None
         if percentile_max is not None:
-            global_pmax = np.percentile(img, percentile_max)
+            pmax = np.percentile(img, percentile_max)
         else:
-            global_pmax = None
-
-        if not skip:
-            pmin, pmax, pclip, mean, std = global_pmin, global_pmax, None, global_mean, global_std
-        else:
-            pmin, pmax, pclip, mean, std = None, None, None, None, None
-
-        if preprocessing_transform_config is not None:
-            preprocessing_stats = {
-                'pmin': global_pmin,
-                'pmax': global_pmax,
-                'mean': global_mean,
-                'std': global_std,
-                'percentile_min': percentile_min,
-                'percentile_max': percentile_max,
-                'percentile_clip': percentile_clip,
-            }
-            transformer = transforms.Transformer(preprocessing_transform_config, preprocessing_stats)
-            # load raw images transformer
-            preprocess_raw_transform = transformer.raw_transform()
-            if isinstance(img, list):
-                img_preprocessed = [preprocess_raw_transform(i) for i in img]
-            else:
-                img_preprocessed = preprocess_raw_transform(img)
-            if percentile_clip is not None:
-                pclip = np.percentile(img_preprocessed, percentile_clip)
-            else:
-                pclip = None
+            pmax = None
 
     else:
-        pmin, pmax, pclip, mean, std = None, None, None, None, None
+        pmin, pmax, mean, std = None, None, None, None
     
 
     return {
         'pmin': pmin,
         'pmax': pmax,
-        'pclip': pclip,
         'mean': mean,
         'std': std,
         'percentile_min': percentile_min,
         'percentile_max': percentile_max,
-        'percentile_clip': percentile_clip,
     }
 
 
