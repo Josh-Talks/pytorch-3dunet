@@ -5,9 +5,10 @@ import os
 import glob
 from abc import abstractmethod
 
-import imageio
+import imageio.v2 as imageio
 import numpy as np
 import torch
+import h5py
 
 from pytorch3dunet.augment import transforms
 from pytorch3dunet.datasets.hdf5 import _create_padded_indexes
@@ -427,8 +428,6 @@ class S_BIAD634_Dataset(ConfigDataset):
         percentiles=None,
         image_dir="rawimages",
         label_dir="groundtruth",
-        image_file_type="tif",
-        label_file_type="tif",
     ):
         base_dir = os.path.dirname(file_names_path)
         assert os.path.isdir(base_dir), f"{base_dir} is not a directory"
@@ -442,7 +441,7 @@ class S_BIAD634_Dataset(ConfigDataset):
         images_dir = os.path.join(base_dir, image_dir)
         assert os.path.isdir(images_dir)
         self.images, self.paths = self._load_files(
-            images_dir, self.file_names, expand_dims, image_file_type
+            images_dir, self.file_names, expand_dims, "tif"
         )
         self.file_path = images_dir
 
@@ -477,7 +476,7 @@ class S_BIAD634_Dataset(ConfigDataset):
             masks_dir = os.path.join(base_dir, label_dir)
             assert os.path.isdir(masks_dir)
             self.masks, _ = self._load_files(
-                masks_dir, self.file_names, expand_dims, label_file_type
+                masks_dir, self.file_names, expand_dims, "tif"
             )
             assert len(self.images) == len(self.masks)
             # load label images transformer
@@ -521,6 +520,8 @@ class S_BIAD634_Dataset(ConfigDataset):
                 expand_dims,
                 dataset_config.get("global_norm", False),
                 dataset_config.get("percentiles", None),
+                dataset_config.get("image_dir", "rawimages"),
+                dataset_config.get("label_dir", "groundtruth"),
             )
         ]
 
@@ -865,13 +866,7 @@ class S_BIAD1410_Dataset(ConfigDataset):
                     phase=phase,
                     slice_builder_config=slice_builder_config,
                     transformer_config=transformer_config,
-                    raw_internal_path=dataset_config.get("raw_internal_path", "raw"),
-                    label_internal_path=dataset_config.get(
-                        "label_internal_path", "label"
-                    ),
-                    weight_internal_path=dataset_config.get(
-                        "weight_internal_path", None
-                    ),
+                    label_suffix=phase_config.get("label_suffix", "mask"),
                     global_normalization=dataset_config.get(
                         "global_normalization", None
                     ),
@@ -881,3 +876,387 @@ class S_BIAD1410_Dataset(ConfigDataset):
             except Exception:
                 logger.error(f"Skipping {phase} set: {file_path}", exc_info=True)
         return datasets
+
+
+class HeLaNuc_Dataset(ConfigDataset):
+    def __init__(
+        self,
+        root_dir,
+        phase,
+        transformer_config,
+        expand_dims=True,
+        global_norm=False,
+        percentiles=None,
+    ):
+        assert os.path.isdir(root_dir), f"{root_dir} is not a directory"
+        assert phase in ["train", "val", "test"]
+
+        self.phase = phase
+
+        # load raw images
+        images_dir = os.path.join(root_dir, "images")
+        assert os.path.isdir(images_dir)
+        self.images, self.paths = self._load_files(images_dir, expand_dims)
+        self.file_path = images_dir
+
+        if percentiles is None:
+            percentile_min = None
+            percentile_max = None
+        else:
+            percentile_min = percentiles[0]
+            percentile_max = percentiles[1]
+        if global_norm:
+            stats = calculate_stats(
+                self.images,
+                False,
+                percentile_min,
+                percentile_max,
+            )
+        else:
+            stats = calculate_stats(
+                self.images,
+                True,
+                percentile_min,
+                percentile_max,
+            )
+
+        transformer = transforms.Transformer(transformer_config, stats)
+
+        # load raw images transformer
+        self.raw_transform = transformer.raw_transform()
+
+        if phase != "test":
+            # load labeled images
+            masks_dir = os.path.join(root_dir, "nuclei_masks")
+            assert os.path.isdir(masks_dir)
+            self.masks, _ = self._load_files(masks_dir, expand_dims)
+            assert len(self.images) == len(self.masks)
+            # load label images transformer
+            self.masks_transform = transformer.label_transform()
+        else:
+            self.masks = None
+            self.masks_transform = None
+
+    def __getitem__(self, idx):
+        if idx >= len(self):
+            raise StopIteration
+
+        img = self.images[idx]
+        if self.phase != "test":
+            mask = self.masks[idx]
+            return self.raw_transform(img), self.masks_transform(mask)
+        else:
+            return self.raw_transform(img), self.paths[idx]
+
+    def __len__(self):
+        return len(self.images)
+
+    @classmethod
+    def prediction_collate(cls, batch):
+        return dsb_prediction_collate(batch)
+
+    @classmethod
+    def create_datasets(cls, dataset_config, phase):
+        phase_config = dataset_config[phase]
+        # load data augmentation configuration
+        transformer_config = phase_config["transformer"]
+        # load files to process
+        file_paths = phase_config["file_paths"]
+        expand_dims = dataset_config.get("expand_dims", True)
+        return [
+            cls(
+                file_paths[0],
+                phase,
+                transformer_config,
+                expand_dims,
+                dataset_config.get("global_norm", False),
+                dataset_config.get("percentiles", None),
+            )
+        ]
+
+    @staticmethod
+    def _load_files(dir, expand_dims):
+        files_data = []
+        paths = []
+        for file in sorted(os.listdir(dir)):
+            path = os.path.join(dir, file)
+            img = np.asarray(imageio.imread(path))
+            if expand_dims:
+                dims = img.ndim
+                img = np.expand_dims(img, axis=0)
+                if dims == 3:
+                    img = np.transpose(img, (3, 0, 1, 2))
+
+            files_data.append(img)
+            paths.append(path)
+
+        return files_data, paths
+    
+
+### General Datasets
+
+class Abstract_TIF_Dataset(ConfigDataset):
+    def __init__(
+        self,
+        image_dir,
+        mask_dir,
+        phase,
+        transformer_config,
+        filenames_path=None,
+        expand_dims=True,
+        global_norm=False,
+        percentiles=None,
+    ):
+        assert os.path.isdir(image_dir), f"{image_dir} is not a directory"
+        assert os.path.isdir(mask_dir), f"{mask_dir} is not a directory"
+        assert phase in ["train", "val", "test"]
+
+        self.phase = phase
+
+        # load raw images
+        assert os.path.isdir(image_dir)
+
+        if filenames_path is not None:
+            self.file_names = read_file_names(filenames_path)
+
+        self.images, self.paths = self._load_files(
+            image_dir, expand_dims
+        )
+        self.file_path = image_dir
+
+        if percentiles is None:
+            percentile_min = None
+            percentile_max = None
+        else:
+            percentile_min = percentiles[0]
+            percentile_max = percentiles[1]
+        if global_norm:
+            stats = calculate_stats(
+                self.images,
+                False,
+                percentile_min,
+                percentile_max,
+            )
+        else:
+            stats = calculate_stats(
+                self.images,
+                True,
+                percentile_min,
+                percentile_max,
+            )
+
+        transformer = transforms.Transformer(transformer_config, stats)
+
+        # load raw images transformer
+        self.raw_transform = transformer.raw_transform()
+
+        if phase != "test":
+            # load labeled images
+            assert os.path.isdir(mask_dir)
+            self.masks, _ = self._load_files(mask_dir, expand_dims)
+            assert len(self.images) == len(self.masks)
+            # load label images transformer
+            self.masks_transform = transformer.label_transform()
+        else:
+            self.masks = None
+            self.masks_transform = None
+
+    def __getitem__(self, idx):
+        if idx >= len(self):
+            raise StopIteration
+
+        img = self.images[idx]
+        if self.phase != "test":
+            mask = self.masks[idx]
+            return self.raw_transform(img), self.masks_transform(mask)
+        else:
+            return self.raw_transform(img), self.paths[idx]
+
+    def __len__(self):
+        return len(self.images)
+
+    @classmethod
+    def prediction_collate(cls, batch):
+        return dsb_prediction_collate(batch)
+
+    @classmethod
+    def create_datasets(cls, dataset_config, phase):
+        phase_config = dataset_config[phase]
+        # load data augmentation configuration
+        transformer_config = phase_config["transformer"]
+        # load files to process
+        image_paths = phase_config["image_dir"]
+        mask_paths = phase_config["mask_dir"]
+        expand_dims = dataset_config.get("expand_dims", True)
+        return [
+            cls(
+                image_paths[0],
+                mask_paths[0],
+                phase,
+                transformer_config,
+                expand_dims,
+                dataset_config.get("global_norm", False),
+                dataset_config.get("percentiles", None),
+            )
+        ]
+
+    @abstractmethod
+    def _load_files(self, dir, expand_dims):
+        pass
+
+
+
+class Standard_TIF_Dataset(Abstract_TIF_Dataset):
+    """Dataset for tif files arranged in a file structure
+    of multiple single image tifs located in a single 
+    file with image and mask files located in differnt folders.
+    e.g DSB2018, S_BIAD895, HeLaNuc
+
+    Args:
+        Abstract_TIF_Dataset (_type_): _description_
+    """
+    def __init__(
+        self,
+        image_dir,
+        mask_dir,
+        phase,
+        transformer_config,
+        expand_dims=True,
+        global_norm=False,
+        percentiles=None,
+    ):
+        super().__init__(
+            image_dir=image_dir,
+            mask_dir=mask_dir,
+            phase=phase,
+            transformer_config=transformer_config,
+            expand_dims=expand_dims,
+            global_norm=global_norm,
+            percentiles=percentiles,
+        )
+
+    def _load_files(self, dir, expand_dims):
+        files_data = []
+        paths = []
+        for file in sorted(os.listdir(dir)):
+            path = os.path.join(dir, file)
+            if file.endswith(".tif"):
+                img = np.asarray(imageio.imread(path))
+            # check if file ends in ['.h5', '.hdf5']
+            elif file.endswith(('.h5', '.hdf5')):
+                with h5py.File(path, 'r') as f:
+                    img = f['data'][:]
+            if expand_dims:
+                dims = img.ndim
+                img = np.expand_dims(img, axis=0)
+                if dims == 3:
+                    img = np.transpose(img, (3, 0, 1, 2))
+
+            files_data.append(img)
+            paths.append(path)
+
+        return files_data, paths
+
+
+class Hoechst_Dataset(Abstract_TIF_Dataset):
+    def __init__(
+        self,
+        image_dir,
+        mask_dir,
+        phase,
+        transformer_config,
+        expand_dims=True,
+        global_norm=False,
+        percentiles=None,
+    ):
+        super().__init__(
+            image_dir=image_dir,
+            mask_dir=mask_dir,
+            pahse=phase,
+            transformer_config=transformer_config,
+            expand_dims=expand_dims,
+            global_norm=global_norm,
+            percentiles=percentiles,
+        )
+
+    def _load_files(dir, expand_dims):
+        files_data = []
+        paths = []
+        for file in sorted(os.listdir(dir)):
+            path = os.path.join(dir, file)
+            if file.endswith((".tif", ".png")):
+                img = np.asarray(imageio.imread(path))
+            elif file.endswith(('.h5', '.hdf5')):
+                with h5py.File(path, 'r') as f:
+                    img = f['data'][:]
+            if img.ndim == 3:
+                img = transforms.RgbToLabel()(img)
+            if expand_dims:
+                dims = img.ndim
+                img = np.expand_dims(img, axis=0)
+                if dims == 3:
+                    img = np.transpose(img, (3, 0, 1, 2))
+
+            files_data.append(img)
+            paths.append(path)
+
+        return files_data, paths
+    
+
+
+class Tif_txt_Dataset(Abstract_TIF_Dataset):
+    """Dataset for tif files arranged in a file structure
+    of multiple single image tifs located in a single 
+    file with image and mask files located in differnt folders.
+    With a txt file containing the filenames of images split
+    into train, val and test sets.
+    e.g BBBC039, S_BIAD634 
+
+    Args:
+        Abstract_TIF_Dataset (_type_): _description_
+    """
+    def __init__(
+        self,
+        image_dir,
+        mask_dir,
+        phase,
+        transformer_config,
+        filenames_path,
+        expand_dims=True,
+        global_norm=False,
+        percentiles=None,
+    ):
+        super().__init__(
+            image_dir=image_dir,
+            mask_dir=mask_dir,
+            phase=phase,
+            transformer_config=transformer_config,
+            filenames_path=filenames_path,
+            expand_dims=expand_dims,
+            global_norm=global_norm,
+            percentiles=percentiles,
+        )
+        
+
+    def _load_files(self, dir, expand_dims):
+        files_data = []
+        paths = []
+        for file in self.file_names:
+            path = glob.glob(dir + f"/*{file}*")[0]
+            if path.endswith((".tif", ".png")):
+                img = np.asarray(imageio.imread(path))
+            elif path.endswith(('.h5', '.hdf5')):
+                with h5py.File(path, 'r') as f:
+                    img = f['data'][:]
+            if img.ndim == 3:
+                img = img[:, :, 0]
+            if expand_dims:
+                dims = img.ndim
+                img = np.expand_dims(img, axis=0)
+                if dims == 3:
+                    img = np.transpose(img, (3, 0, 1, 2))
+
+            files_data.append(img)
+            paths.append(path)
+
+        return files_data, paths
