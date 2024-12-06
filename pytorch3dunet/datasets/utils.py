@@ -1,5 +1,5 @@
 import collections
-from typing import Any, Optional
+from typing import Any, Optional, Union, List
 
 import numpy as np
 import torch
@@ -289,7 +289,7 @@ def default_prediction_collate(batch):
 
 
 def calculate_stats(
-        img: np.array, 
+        img: Union[np.array|List[np.array]], 
         skip: bool = False, 
         percentile_min:Optional[float]=None, 
         percentile_max:Optional[float]=None,
@@ -304,6 +304,9 @@ def calculate_stats(
     Returns:
         tuple[float, float, float, float]: The minimum percentile, maximum percentile, mean, and std dev
     """
+    # if img is list, flatten and combine items of list
+    if isinstance(img, list):
+        img = np.concatenate([np.ravel(arr) for arr in img])
     if not skip:
         mean = np.mean(img)
         std = np.std(img)
