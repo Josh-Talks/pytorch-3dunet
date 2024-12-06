@@ -367,7 +367,7 @@ class CropToFixed:
         elif self.top_left == True:
             y_start = 0
             x_start = 0
-            y_pad, x_pad = (0, 0)
+            y_pad, x_pad = (0, 0), (0, 0)
         
         else:
             y_range, y_pad = _rand_range_and_pad(self.crop_y, y)
