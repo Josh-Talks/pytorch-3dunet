@@ -688,7 +688,7 @@ class S_BIAD1410_Dataset(ConfigDataset):
         global_normalization=True,
         global_percentiles=None,
     ):
-        assert phase in ["train", "val", "test"]
+        assert phase in ["train", "val", "test", "eval"]
 
         self.phase = phase
         self.file_path = file_path
@@ -702,9 +702,16 @@ class S_BIAD1410_Dataset(ConfigDataset):
 
         if global_normalization:
             logger.info("Calculating mean and std of the raw data...")
-            self.raw = imageio.volread(file_path)
-            if self.roi is not None:
-                self.raw = self.raw[self.roi]
+            if file_path.endswith((".h5", ".hdf5")):
+                with h5py.File(file_path, "r") as f:
+                    if self.roi is not None:
+                        self.raw = f["predictions"][self.roi]
+                    else:
+                        self.raw = f["predictions"][:]
+            elif file_path.endswith(".tif"):
+                self.raw = imageio.volread(file_path)
+                if self.roi is not None:
+                    self.raw = self.raw[self.roi]
             if global_percentiles is not None:
                 stats = calculate_stats(
                     self.raw,
@@ -714,8 +721,18 @@ class S_BIAD1410_Dataset(ConfigDataset):
             else:
                 stats = calculate_stats(self.raw)
         else:
-            self.raw = None
             stats = calculate_stats(None, True)
+            if file_path.endswith((".h5", ".hdf5")):
+                with h5py.File(file_path, "r") as f:
+                    if self.roi is not None:
+                        self.raw = f["predictions"][self.roi]
+                    else:
+                        self.raw = f["predictions"][:]
+            elif file_path.endswith(".tif"):
+                self.raw = imageio.volread(file_path)
+                if self.roi is not None:
+                    self.raw = self.raw[self.roi]
+
 
         self.transformer = transforms.Transformer(transformer_config, stats)
         self.raw_transform = self.transformer.raw_transform()
@@ -723,8 +740,10 @@ class S_BIAD1410_Dataset(ConfigDataset):
         if phase != "test":
             # create label/weight transform only in train/val phase
             self.label_transform = self.transformer.label_transform()
-
+            self.label = imageio.volread(self.label_file_path)
             self._check_volume_sizes()
+            if self.roi is not None:
+                self.label = self.label[self.roi]
         else:
             # 'test' phase used only for predictions so ignore the label dataset
             self.label = None
@@ -739,30 +758,13 @@ class S_BIAD1410_Dataset(ConfigDataset):
                     f"performance, but found patch_shape: {patch_shape} and stride_shape: {stride_shape}!"
                 )
 
-        if self.roi is not None:
-            if self.raw is None:
-                self.raw = imageio.volread(file_path)[self.roi]
-            self.label = (
-                imageio.volread(self.label_file_path)[self.roi]
-                if phase != "test"
-                else None
-            )
-            weight_map = None
-
-        else:
-            if self.raw is None:
-                self.raw = imageio.volread(file_path)
-            self.label = (
-                imageio.volread(self.label_file_path) if phase != "test" else None
-            )
-            weight_map = None
+        
         # build slice indices for raw and label data sets
         slice_builder = get_slice_builder(
-            self.raw, self.label, weight_map, slice_builder_config
+            self.raw, self.label, None, slice_builder_config
         )
         self.raw_slices = slice_builder.raw_slices
         self.label_slices = slice_builder.label_slices
-        self.weight_slices = slice_builder.weight_slices
 
         self.patch_count = len(self.raw_slices)
         logger.info(f"Number of patches: {self.patch_count}")
@@ -895,7 +897,7 @@ class Abstract_TIF_Dataset(ConfigDataset):
     ):
         assert os.path.isdir(image_dir), f"{image_dir} is not a directory"
         assert os.path.isdir(mask_dir), f"{mask_dir} is not a directory"
-        assert phase in ["train", "val", "test"]
+        assert phase in ["train", "val", "test", "eval"]
 
         self.phase = phase
 
@@ -996,7 +998,7 @@ class Standard_TIF_Dataset(Abstract_TIF_Dataset):
     """Dataset for tif files arranged in a file structure
     of multiple single image tifs located in a single 
     file with image and mask files located in differnt folders.
-    e.g DSB2018, S_BIAD895, HeLaNuc
+    e.g DSB2018, S_BIAD895
 
     Args:
         Abstract_TIF_Dataset (_type_): _description_
@@ -1026,12 +1028,12 @@ class Standard_TIF_Dataset(Abstract_TIF_Dataset):
         paths = []
         for file in sorted(os.listdir(dir)):
             path = os.path.join(dir, file)
-            if file.endswith(".tif"):
+            if file.endswith((".tif", ".png")):
                 img = np.asarray(imageio.imread(path))
             # check if file ends in ['.h5', '.hdf5']
             elif file.endswith(('.h5', '.hdf5')):
                 with h5py.File(path, 'r') as f:
-                    img = f['data'][:]
+                    img = f['predictions'][:]
             if expand_dims:
                 dims = img.ndim
                 img = np.expand_dims(img, axis=0)
@@ -1058,14 +1060,14 @@ class Hoechst_Dataset(Abstract_TIF_Dataset):
         super().__init__(
             image_dir=image_dir,
             mask_dir=mask_dir,
-            pahse=phase,
+            phase=phase,
             transformer_config=transformer_config,
             expand_dims=expand_dims,
             global_norm=global_norm,
             percentiles=percentiles,
         )
 
-    def _load_files(dir, expand_dims):
+    def _load_files(self, dir, expand_dims):
         files_data = []
         paths = []
         for file in sorted(os.listdir(dir)):
@@ -1074,9 +1076,55 @@ class Hoechst_Dataset(Abstract_TIF_Dataset):
                 img = np.asarray(imageio.imread(path))
             elif file.endswith(('.h5', '.hdf5')):
                 with h5py.File(path, 'r') as f:
-                    img = f['data'][:]
+                    img = f['predictions'][:]
             if img.ndim == 3:
                 img = transforms.RgbToLabel()(img)
+            if expand_dims:
+                dims = img.ndim
+                img = np.expand_dims(img, axis=0)
+                if dims == 3:
+                    img = np.transpose(img, (3, 0, 1, 2))
+
+            files_data.append(img)
+            paths.append(path)
+
+        return files_data, paths
+
+
+class HeLaNuc_Dataset(Abstract_TIF_Dataset):
+    def __init__(
+        self,
+        image_dir,
+        mask_dir,
+        phase,
+        transformer_config,
+        expand_dims=True,
+        global_norm=False,
+        percentiles=None,
+    ):
+        super().__init__(
+            image_dir=image_dir,
+            mask_dir=mask_dir,
+            phase=phase,
+            transformer_config=transformer_config,
+            expand_dims=expand_dims,
+            global_norm=global_norm,
+            percentiles=percentiles,
+        )
+
+    def _load_files(self, dir, expand_dims):
+        files_data = []
+        paths = []
+        for file in sorted(os.listdir(dir)):
+            path = os.path.join(dir, file)
+            if file.endswith((".tif", ".png")):
+                img = np.asarray(imageio.imread(path))
+            elif file.endswith(('.h5', '.hdf5')):
+                with h5py.File(path, 'r') as f:
+                    img = f['predictions'][:]
+            if img.ndim == 3:
+                #select last channel corresponding to nuclei channel
+                img = img[:, :, 2]
             if expand_dims:
                 dims = img.ndim
                 img = np.expand_dims(img, axis=0)
@@ -1133,7 +1181,7 @@ class Tif_txt_Dataset(Abstract_TIF_Dataset):
                 img = np.asarray(imageio.imread(path))
             elif path.endswith(('.h5', '.hdf5')):
                 with h5py.File(path, 'r') as f:
-                    img = f['data'][:]
+                    img = f['predictions'][:]
             if img.ndim == 3:
                 img = img[:, :, 0]
             if expand_dims:
