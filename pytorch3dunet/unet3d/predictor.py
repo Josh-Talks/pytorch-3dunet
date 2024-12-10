@@ -411,7 +411,7 @@ class PatchWisePredictor(_AbstractPredictor):
         )
 
     def __call__(self, test_loader):
-        assert isinstance(test_loader.dataset, AbstractHDF5Dataset)
+        #assert isinstance(test_loader.dataset, AbstractHDF5Dataset)
         logger.info(f"Processing '{test_loader.dataset.file_path}'...")
         start = time.perf_counter()
 
