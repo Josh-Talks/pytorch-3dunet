@@ -33,14 +33,17 @@ def traverse_S_BIAD1410_paths(file_paths):
     results = []
     for file_path in file_paths:
         if os.path.isdir(file_path):
-            # find all files in directory with ending .tif and not containing "mask"
-            paths = glob.glob(os.path.join(file_path, "**/*.tif"), recursive=True)
+            # find all files in directory with ending .tif or .h5 and not containing "mask"
+            paths = (
+                glob.glob(os.path.join(file_path, "**/*.tif"), recursive=True) 
+                + glob.glob(os.path.join(file_path, "**/*.h5"), recursive=True)
+            )
             condition = lambda x: "mask" not in os.path.basename(x)
             paths = list(filter(condition, paths))
             results.extend(paths)
         else:
             results.append(file_path)
-    return results
+    return sorted(results)
 
 
 def dsb_prediction_collate(batch):
@@ -679,20 +682,20 @@ class S_BIAD1410_Dataset(ConfigDataset):
 
     def __init__(
         self,
-        file_path,
+        img_path,
+        mask_path,
         roi,
         phase,
         slice_builder_config,
         transformer_config,
-        label_suffix="mask",
         global_normalization=True,
         global_percentiles=None,
     ):
         assert phase in ["train", "val", "test", "eval"]
 
         self.phase = phase
-        self.file_path = file_path
-        self.label_file_path = file_path.replace(".tif", f"_{label_suffix}.tif")
+        self.file_path = img_path
+        self.label_file_path = mask_path
         if roi is not None:
             self.roi = get_roi_slice(roi)
         else:
@@ -702,14 +705,14 @@ class S_BIAD1410_Dataset(ConfigDataset):
 
         if global_normalization:
             logger.info("Calculating mean and std of the raw data...")
-            if file_path.endswith((".h5", ".hdf5")):
-                with h5py.File(file_path, "r") as f:
+            if self.file_path.endswith((".h5", ".hdf5")):
+                with h5py.File(self.file_path, "r") as f:
                     if self.roi is not None:
                         self.raw = f["predictions"][self.roi]
                     else:
                         self.raw = f["predictions"][:]
-            elif file_path.endswith(".tif"):
-                self.raw = imageio.volread(file_path)
+            elif self.file_path.endswith(".tif"):
+                self.raw = imageio.volread(self.file_path)
                 if self.roi is not None:
                     self.raw = self.raw[self.roi]
             if global_percentiles is not None:
@@ -722,17 +725,16 @@ class S_BIAD1410_Dataset(ConfigDataset):
                 stats = calculate_stats(self.raw)
         else:
             stats = calculate_stats(None, True)
-            if file_path.endswith((".h5", ".hdf5")):
-                with h5py.File(file_path, "r") as f:
+            if self.file_path.endswith((".h5", ".hdf5")):
+                with h5py.File(self.file_path, "r") as f:
                     if self.roi is not None:
                         self.raw = f["predictions"][self.roi]
                     else:
                         self.raw = f["predictions"][:]
-            elif file_path.endswith(".tif"):
-                self.raw = imageio.volread(file_path)
+            elif self.file_path.endswith(".tif"):
+                self.raw = imageio.volread(self.file_path)
                 if self.roi is not None:
                     self.raw = self.raw[self.roi]
-
 
         self.transformer = transforms.Transformer(transformer_config, stats)
         self.raw_transform = self.transformer.raw_transform()
@@ -758,7 +760,6 @@ class S_BIAD1410_Dataset(ConfigDataset):
                     f"performance, but found patch_shape: {patch_shape} and stride_shape: {stride_shape}!"
                 )
 
-        
         # build slice indices for raw and label data sets
         slice_builder = get_slice_builder(
             self.raw, self.label, None, slice_builder_config
@@ -769,15 +770,15 @@ class S_BIAD1410_Dataset(ConfigDataset):
         self.patch_count = len(self.raw_slices)
         logger.info(f"Number of patches: {self.patch_count}")
 
-    @abstractmethod
+        self._raw_padded = None
+        
+
     def get_raw_patch(self, idx):
         return self.raw[idx]
 
-    @abstractmethod
     def get_label_patch(self, idx):
         return self.label[idx]
 
-    @abstractmethod
     def get_raw_padded_patch(self, idx):
         if self._raw_padded is None:
             self._raw_padded = mirror_pad(self.raw, self.halo_shape)
@@ -850,25 +851,26 @@ class S_BIAD1410_Dataset(ConfigDataset):
         # load data augmentation configuration
         transformer_config = phase_config["transformer"]
         # load slice builder config
-        slice_builder_config = phase_config["slice_builder"]
-        # load files to process
-        file_paths = phase_config["file_paths"]
+        slice_builder_config = phase_config["slice_builder"] 
         # file_paths may contain both files and directories; if the file_path is a directory all H5 files inside
         # are going to be included in the final file_paths
-        file_paths = traverse_S_BIAD1410_paths(file_paths)
+        img_paths = traverse_S_BIAD1410_paths(phase_config["img_paths"])
+        mask_paths = traverse_S_BIAD1410_paths(phase_config["mask_paths"])
+
         roi = phase_config.get("roi", None)
 
         datasets = []
-        for file_path in file_paths:
+        for i, img_path in enumerate(img_paths):
             try:
-                logger.info(f"Loading {phase} set from: {file_path}...")
+                assert os.path.basename(img_path) in mask_paths[i], (f"Image {img_path} does not have a corresponding mask in {mask_paths[i]}")
+                logger.info(f"Loading {phase} set from: {img_path}...")
                 dataset = cls(
-                    file_path=file_path,
+                    img_path=img_path,
+                    mask_path=mask_paths[i],
                     roi=roi,
                     phase=phase,
                     slice_builder_config=slice_builder_config,
                     transformer_config=transformer_config,
-                    label_suffix=phase_config.get("label_suffix", "mask"),
                     global_normalization=dataset_config.get(
                         "global_normalization", None
                     ),
@@ -876,12 +878,12 @@ class S_BIAD1410_Dataset(ConfigDataset):
                 )
                 datasets.append(dataset)
             except Exception:
-                logger.error(f"Skipping {phase} set: {file_path}", exc_info=True)
+                logger.error(f"Skipping {phase} set: {img_path}", exc_info=True)
         return datasets
 
-    
 
 ### General Datasets
+
 
 class Abstract_TIF_Dataset(ConfigDataset):
     def __init__(
@@ -907,9 +909,7 @@ class Abstract_TIF_Dataset(ConfigDataset):
         if filenames_path is not None:
             self.file_names = read_file_names(filenames_path)
 
-        self.images, self.paths = self._load_files(
-            image_dir, expand_dims
-        )
+        self.images, self.paths = self._load_files(image_dir, expand_dims)
         self.file_path = image_dir
 
         if percentiles is None:
@@ -967,42 +967,25 @@ class Abstract_TIF_Dataset(ConfigDataset):
     def prediction_collate(cls, batch):
         return dsb_prediction_collate(batch)
 
-    @classmethod
+    @abstractmethod
     def create_datasets(cls, dataset_config, phase):
-        phase_config = dataset_config[phase]
-        # load data augmentation configuration
-        transformer_config = phase_config["transformer"]
-        # load files to process
-        image_paths = phase_config["image_dir"]
-        mask_paths = phase_config["mask_dir"]
-        expand_dims = dataset_config.get("expand_dims", True)
-        return [
-            cls(
-                image_paths[0],
-                mask_paths[0],
-                phase,
-                transformer_config,
-                expand_dims,
-                dataset_config.get("global_norm", False),
-                dataset_config.get("percentiles", None),
-            )
-        ]
+        pass
 
     @abstractmethod
     def _load_files(self, dir, expand_dims):
         pass
 
 
-
 class Standard_TIF_Dataset(Abstract_TIF_Dataset):
     """Dataset for tif files arranged in a file structure
-    of multiple single image tifs located in a single 
+    of multiple single image tifs located in a single
     file with image and mask files located in differnt folders.
     e.g DSB2018, S_BIAD895
 
     Args:
         Abstract_TIF_Dataset (_type_): _description_
     """
+
     def __init__(
         self,
         image_dir,
@@ -1031,9 +1014,9 @@ class Standard_TIF_Dataset(Abstract_TIF_Dataset):
             if file.endswith((".tif", ".png")):
                 img = np.asarray(imageio.imread(path))
             # check if file ends in ['.h5', '.hdf5']
-            elif file.endswith(('.h5', '.hdf5')):
-                with h5py.File(path, 'r') as f:
-                    img = f['predictions'][:]
+            elif file.endswith((".h5", ".hdf5")):
+                with h5py.File(path, "r") as f:
+                    img = f["predictions"][:]
             if expand_dims:
                 dims = img.ndim
                 img = np.expand_dims(img, axis=0)
@@ -1044,6 +1027,27 @@ class Standard_TIF_Dataset(Abstract_TIF_Dataset):
             paths.append(path)
 
         return files_data, paths
+
+    @classmethod
+    def create_datasets(cls, dataset_config, phase):
+        phase_config = dataset_config[phase]
+        # load data augmentation configuration
+        transformer_config = phase_config["transformer"]
+        # load files to process
+        image_paths = phase_config["image_dir"]
+        mask_paths = phase_config["mask_dir"]
+        expand_dims = dataset_config.get("expand_dims", True)
+        return [
+            cls(
+                image_dir=image_paths[0],
+                mask_dir=mask_paths[0],
+                phase=phase,
+                transformer_config=transformer_config,
+                expand_dims=expand_dims,
+                global_norm=dataset_config.get("global_norm", False),
+                percentiles=dataset_config.get("percentiles", None),
+            )
+        ]
 
 
 class Hoechst_Dataset(Abstract_TIF_Dataset):
@@ -1074,9 +1078,9 @@ class Hoechst_Dataset(Abstract_TIF_Dataset):
             path = os.path.join(dir, file)
             if file.endswith((".tif", ".png")):
                 img = np.asarray(imageio.imread(path))
-            elif file.endswith(('.h5', '.hdf5')):
-                with h5py.File(path, 'r') as f:
-                    img = f['predictions'][:]
+            elif file.endswith((".h5", ".hdf5")):
+                with h5py.File(path, "r") as f:
+                    img = f["predictions"][:]
             if img.ndim == 3:
                 img = transforms.RgbToLabel()(img)
             if expand_dims:
@@ -1089,6 +1093,27 @@ class Hoechst_Dataset(Abstract_TIF_Dataset):
             paths.append(path)
 
         return files_data, paths
+
+    @classmethod
+    def create_datasets(cls, dataset_config, phase):
+        phase_config = dataset_config[phase]
+        # load data augmentation configuration
+        transformer_config = phase_config["transformer"]
+        # load files to process
+        image_paths = phase_config["image_dir"]
+        mask_paths = phase_config["mask_dir"]
+        expand_dims = dataset_config.get("expand_dims", True)
+        return [
+            cls(
+                image_dir=image_paths[0],
+                mask_dir=mask_paths[0],
+                phase=phase,
+                transformer_config=transformer_config,
+                expand_dims=expand_dims,
+                global_norm=dataset_config.get("global_norm", False),
+                percentiles=dataset_config.get("percentiles", None),
+            )
+        ]
 
 
 class HeLaNuc_Dataset(Abstract_TIF_Dataset):
@@ -1119,11 +1144,11 @@ class HeLaNuc_Dataset(Abstract_TIF_Dataset):
             path = os.path.join(dir, file)
             if file.endswith((".tif", ".png")):
                 img = np.asarray(imageio.imread(path))
-            elif file.endswith(('.h5', '.hdf5')):
-                with h5py.File(path, 'r') as f:
-                    img = f['predictions'][:]
+            elif file.endswith((".h5", ".hdf5")):
+                with h5py.File(path, "r") as f:
+                    img = f["predictions"][:]
             if img.ndim == 3:
-                #select last channel corresponding to nuclei channel
+                # select last channel corresponding to nuclei channel
                 img = img[:, :, 2]
             if expand_dims:
                 dims = img.ndim
@@ -1135,20 +1160,41 @@ class HeLaNuc_Dataset(Abstract_TIF_Dataset):
             paths.append(path)
 
         return files_data, paths
-    
+
+    @classmethod
+    def create_datasets(cls, dataset_config, phase):
+        phase_config = dataset_config[phase]
+        # load data augmentation configuration
+        transformer_config = phase_config["transformer"]
+        # load files to process
+        image_paths = phase_config["image_dir"]
+        mask_paths = phase_config["mask_dir"]
+        expand_dims = dataset_config.get("expand_dims", True)
+        return [
+            cls(
+                image_dir=image_paths[0],
+                mask_dir=mask_paths[0],
+                phase=phase,
+                transformer_config=transformer_config,
+                expand_dims=expand_dims,
+                global_norm=dataset_config.get("global_norm", False),
+                percentiles=dataset_config.get("percentiles", None),
+            )
+        ]
 
 
-class Tif_txt_Dataset(Abstract_TIF_Dataset):
+class TIF_txt_Dataset(Abstract_TIF_Dataset):
     """Dataset for tif files arranged in a file structure
-    of multiple single image tifs located in a single 
+    of multiple single image tifs located in a single
     file with image and mask files located in differnt folders.
     With a txt file containing the filenames of images split
     into train, val and test sets.
-    e.g BBBC039, S_BIAD634 
+    e.g BBBC039, S_BIAD634
 
     Args:
         Abstract_TIF_Dataset (_type_): _description_
     """
+
     def __init__(
         self,
         image_dir,
@@ -1170,7 +1216,6 @@ class Tif_txt_Dataset(Abstract_TIF_Dataset):
             global_norm=global_norm,
             percentiles=percentiles,
         )
-        
 
     def _load_files(self, dir, expand_dims):
         files_data = []
@@ -1179,9 +1224,9 @@ class Tif_txt_Dataset(Abstract_TIF_Dataset):
             path = glob.glob(dir + f"/*{file}*")[0]
             if path.endswith((".tif", ".png")):
                 img = np.asarray(imageio.imread(path))
-            elif path.endswith(('.h5', '.hdf5')):
-                with h5py.File(path, 'r') as f:
-                    img = f['predictions'][:]
+            elif path.endswith((".h5", ".hdf5")):
+                with h5py.File(path, "r") as f:
+                    img = f["predictions"][:]
             if img.ndim == 3:
                 img = img[:, :, 0]
             if expand_dims:
@@ -1194,3 +1239,25 @@ class Tif_txt_Dataset(Abstract_TIF_Dataset):
             paths.append(path)
 
         return files_data, paths
+
+    @classmethod
+    def create_datasets(cls, dataset_config, phase):
+        phase_config = dataset_config[phase]
+        # load data augmentation configuration
+        transformer_config = phase_config["transformer"]
+        # load files to process
+        image_paths = phase_config["image_dir"]
+        mask_paths = phase_config["mask_dir"]
+        expand_dims = dataset_config.get("expand_dims", True)
+        return [
+            cls(
+                image_dir=image_paths[0],
+                mask_dir=mask_paths[0],
+                phase=phase,
+                transformer_config=transformer_config,
+                filenames_path=phase_config.get("filenames_path", None),
+                expand_dims=expand_dims,
+                global_norm=dataset_config.get("global_norm", False),
+                percentiles=dataset_config.get("percentiles", None),
+            )
+        ]
