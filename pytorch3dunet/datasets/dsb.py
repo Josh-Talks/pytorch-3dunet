@@ -17,6 +17,7 @@ from pytorch3dunet.datasets.utils import (
     calculate_stats,
     read_file_names,
     get_roi_slice,
+    get_patch_size,
     get_slice_builder,
     mirror_pad,
 )
@@ -686,8 +687,8 @@ class S_BIAD1410_Dataset(ConfigDataset):
         mask_path,
         roi,
         phase,
-        slice_builder_config,
         transformer_config,
+        slice_builder_config=None,
         global_normalization=True,
         global_percentiles=None,
     ):
@@ -700,8 +701,7 @@ class S_BIAD1410_Dataset(ConfigDataset):
             self.roi = get_roi_slice(roi)
         else:
             self.roi = roi
-        self.patch_shape = slice_builder_config.get("patch_shape")
-        self.halo_shape = slice_builder_config.get("halo_shape", [0, 0, 0])
+        
 
         if global_normalization:
             logger.info("Calculating mean and std of the raw data...")
@@ -738,7 +738,7 @@ class S_BIAD1410_Dataset(ConfigDataset):
 
         self.transformer = transforms.Transformer(transformer_config, stats)
         self.raw_transform = self.transformer.raw_transform()
-
+        
         if phase != "test":
             # create label/weight transform only in train/val phase
             self.label_transform = self.transformer.label_transform()
@@ -746,31 +746,42 @@ class S_BIAD1410_Dataset(ConfigDataset):
             self._check_volume_sizes()
             if self.roi is not None:
                 self.label = self.label[self.roi]
-        else:
-            # 'test' phase used only for predictions so ignore the label dataset
-            self.label = None
+            if phase == "eval":
+                with h5py.File(self.file_path, "r") as f:
+                    self.patch_indexes = f["patch_index"][:]
+                self.patch_shape = get_patch_size(self.patch_indexes[0])
+                self.patch_count = len(self.patch_indexes)
+                logger.info(f"Number of patches: {self.patch_count}")
+        
+        if phase != "eval":
+            self.patch_shape = slice_builder_config.get("patch_shape")
+            self.halo_shape = slice_builder_config.get("halo_shape", [0, 0, 0])
+                    
+            if phase == "test":
+                # 'test' phase used only for predictions so ignore the label dataset
+                self.label = None
 
-            # compare patch and stride configuration
-            patch_shape = slice_builder_config.get("patch_shape")
-            stride_shape = slice_builder_config.get("stride_shape")
-            if sum(self.halo_shape) != 0 and patch_shape != stride_shape:
-                logger.warning(
-                    f"Found non-zero halo shape {self.halo_shape}. "
-                    f"In this case: patch shape and stride shape should be equal for optimal prediction "
-                    f"performance, but found patch_shape: {patch_shape} and stride_shape: {stride_shape}!"
-                )
+                # compare patch and stride configuration
+                patch_shape = slice_builder_config.get("patch_shape")
+                stride_shape = slice_builder_config.get("stride_shape")
+                if sum(self.halo_shape) != 0 and patch_shape != stride_shape:
+                    logger.warning(
+                        f"Found non-zero halo shape {self.halo_shape}. "
+                        f"In this case: patch shape and stride shape should be equal for optimal prediction "
+                        f"performance, but found patch_shape: {patch_shape} and stride_shape: {stride_shape}!"
+                    )
+        
+            # build slice indices for raw and label data sets
+            slice_builder = get_slice_builder(
+                self.raw, self.label, None, slice_builder_config
+            )
+            self.raw_slices = slice_builder.raw_slices
+            self.label_slices = slice_builder.label_slices
 
-        # build slice indices for raw and label data sets
-        slice_builder = get_slice_builder(
-            self.raw, self.label, None, slice_builder_config
-        )
-        self.raw_slices = slice_builder.raw_slices
-        self.label_slices = slice_builder.label_slices
+            self.patch_count = len(self.raw_slices)
+            logger.info(f"Number of patches: {self.patch_count}")
 
-        self.patch_count = len(self.raw_slices)
-        logger.info(f"Number of patches: {self.patch_count}")
-
-        self._raw_padded = None
+            self._raw_padded = None
         
 
     def get_raw_patch(self, idx):
@@ -794,35 +805,42 @@ class S_BIAD1410_Dataset(ConfigDataset):
     def __getitem__(self, idx):
         if idx >= len(self):
             raise StopIteration
-
-        raw_idx = self.raw_slices[idx]
-
-        if self.phase == "test":
-            if len(raw_idx) == 4:
-                # discard the channel dimension in the slices: predictor requires only the spatial dimensions of the volume
-                raw_idx = raw_idx[
-                    1:
-                ]  # Remove the first element if raw_idx has 4 elements
-                raw_idx_padded = (slice(None),) + _create_padded_indexes(
-                    raw_idx, self.halo_shape
-                )
-            else:
-                raw_idx_padded = _create_padded_indexes(raw_idx, self.halo_shape)
-
-            raw_patch_transformed = self.raw_transform(
-                self.get_raw_padded_patch(raw_idx_padded)
-            )
-            return raw_patch_transformed, raw_idx
-        else:
-            raw_patch_transformed = self.raw_transform(self.get_raw_patch(raw_idx))
-
-            # get the slice for a given index 'idx'
-            label_idx = self.label_slices[idx]
-            label_patch_transformed = self.label_transform(
-                self.get_label_patch(label_idx)
-            )
-            # return the transformed raw and label patches
+        
+        if self.phase == "eval":
+            raw_patch_transformed = self.raw_transform(self.get_raw_patch(idx))
+            label_idx = get_roi_slice(self.patch_indexes[idx])
+            label_patch_transformed = self.label_transform(self.get_label_patch(label_idx))
             return raw_patch_transformed, label_patch_transformed
+
+        else:
+            raw_idx = self.raw_slices[idx]
+
+            if self.phase == "test":
+                if len(raw_idx) == 4:
+                    # discard the channel dimension in the slices: predictor requires only the spatial dimensions of the volume
+                    raw_idx = raw_idx[
+                        1:
+                    ]  # Remove the first element if raw_idx has 4 elements
+                    raw_idx_padded = (slice(None),) + _create_padded_indexes(
+                        raw_idx, self.halo_shape
+                    )
+                else:
+                    raw_idx_padded = _create_padded_indexes(raw_idx, self.halo_shape)
+
+                raw_patch_transformed = self.raw_transform(
+                    self.get_raw_padded_patch(raw_idx_padded)
+                )
+                return raw_patch_transformed, raw_idx
+            else:
+                raw_patch_transformed = self.raw_transform(self.get_raw_patch(raw_idx))
+
+                # get the slice for a given index 'idx'
+                label_idx = self.label_slices[idx]
+                label_patch_transformed = self.label_transform(
+                    self.get_label_patch(label_idx)
+                )
+                # return the transformed raw and label patches
+                return raw_patch_transformed, label_patch_transformed
 
     def __len__(self):
         return self.patch_count
@@ -833,13 +851,21 @@ class S_BIAD1410_Dataset(ConfigDataset):
                 return volume.shape
             return volume.shape[1:]
 
-        raw = imageio.volread(self.file_path)
+        if self.file_path.endswith((".h5", ".hdf5")):
+            with h5py.File(self.file_path, "r") as f:
+                raw = f["predictions"][:]
+        elif self.file_path.endswith(".tif"):
+            raw = imageio.volread(self.file_path)
         label = imageio.volread(self.label_file_path)
-        assert raw.ndim in [3, 4], "Raw dataset must be 3D (DxHxW) or 4D (CxDxHxW)"
+        if self.phase == "eval":
+            assert raw.ndim in [4, 5], "Raw dataset must be 4D (NxCxHxW) or 5D (NxCxDxHxW)"
+        else:
+            assert raw.ndim in [3, 4], "Raw dataset must be 3D (DxHxW) or 4D (CxDxHxW)"
+            assert _volume_shape(raw) == _volume_shape(
+                label
+            ), "Raw and labels have to be of the same size"
         assert label.ndim in [3, 4], "Label dataset must be 3D (DxHxW) or 4D (CxDxHxW)"
-        assert _volume_shape(raw) == _volume_shape(
-            label
-        ), "Raw and labels have to be of the same size"
+        
 
     def get_patch_shape(self):
         return self.patch_shape
@@ -869,8 +895,8 @@ class S_BIAD1410_Dataset(ConfigDataset):
                     mask_path=mask_paths[i],
                     roi=roi,
                     phase=phase,
-                    slice_builder_config=slice_builder_config,
                     transformer_config=transformer_config,
+                    slice_builder_config=slice_builder_config,
                     global_normalization=dataset_config.get(
                         "global_normalization", None
                     ),
