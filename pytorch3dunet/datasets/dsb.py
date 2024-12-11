@@ -888,7 +888,13 @@ class S_BIAD1410_Dataset(ConfigDataset):
         datasets = []
         for i, img_path in enumerate(img_paths):
             try:
-                assert os.path.basename(img_path) in mask_paths[i], (f"Image {img_path} does not have a corresponding mask in {mask_paths[i]}")
+                if phase == "eval":
+                    assert (os.path.basename(
+                        "_".join(img_path.split("_")[:-1])) in mask_paths[i],(
+                        f"Image {img_path} does not have a corresponding mask in {mask_paths[i]}")
+                    )
+                else:
+                    assert os.path.basename(img_path) in mask_paths[i], (f"Image {img_path} does not have a corresponding mask in {mask_paths[i]}")
                 logger.info(f"Loading {phase} set from: {img_path}...")
                 dataset = cls(
                     img_path=img_path,
