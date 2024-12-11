@@ -388,6 +388,12 @@ def get_roi_slice(roi):
     slices = tuple(slice(start, stop) for start, stop in roi)
     return slices
 
+def get_patch_size(patch_index):
+    patch_size = [0, 0, 0]
+    for i, index in enumerate(patch_index):
+        patch_size[i] = index[1] - index[0]
+    return patch_size
+
 
 def read_file_names(path):
     with open(path, 'r') as f:
