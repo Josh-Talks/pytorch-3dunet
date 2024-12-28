@@ -26,7 +26,7 @@ from pytorch3dunet.unet3d.utils import get_logger
 logger = get_logger("DSB2018Dataset")
 
 
-def traverse_S_BIAD1410_paths(file_paths):
+def traverse_S_BIAD1410_paths(file_paths, find_masks=False):
     """
     Traverse the given list of file paths and include all non mask tif files found in the directories.
     """
@@ -35,11 +35,13 @@ def traverse_S_BIAD1410_paths(file_paths):
     for file_path in file_paths:
         if os.path.isdir(file_path):
             # find all files in directory with ending .tif or .h5 and not containing "mask"
-            paths = (
-                glob.glob(os.path.join(file_path, "**/*.tif"), recursive=True) 
-                + glob.glob(os.path.join(file_path, "**/*.h5"), recursive=True)
-            )
-            condition = lambda x: "mask" not in os.path.basename(x)
+            paths = glob.glob(
+                os.path.join(file_path, "**/*.tif"), recursive=True
+            ) + glob.glob(os.path.join(file_path, "**/*.h5"), recursive=True)
+            if find_masks == True:
+                condition = lambda x: "mask" in os.path.basename(x)
+            else:
+                condition = lambda x: "mask" not in os.path.basename(x)
             paths = list(filter(condition, paths))
             results.extend(paths)
         else:
@@ -701,7 +703,6 @@ class S_BIAD1410_Dataset(ConfigDataset):
             self.roi = get_roi_slice(roi)
         else:
             self.roi = roi
-        
 
         if global_normalization:
             logger.info("Calculating mean and std of the raw data...")
@@ -738,7 +739,7 @@ class S_BIAD1410_Dataset(ConfigDataset):
 
         self.transformer = transforms.Transformer(transformer_config, stats)
         self.raw_transform = self.transformer.raw_transform()
-        
+
         if phase != "test":
             # create label/weight transform only in train/val phase
             self.label_transform = self.transformer.label_transform()
@@ -752,11 +753,11 @@ class S_BIAD1410_Dataset(ConfigDataset):
                 self.patch_shape = get_patch_size(self.patch_indexes[0])
                 self.patch_count = len(self.patch_indexes)
                 logger.info(f"Number of patches: {self.patch_count}")
-        
+
         if phase != "eval":
             self.patch_shape = slice_builder_config.get("patch_shape")
             self.halo_shape = slice_builder_config.get("halo_shape", [0, 0, 0])
-                    
+
             if phase == "test":
                 # 'test' phase used only for predictions so ignore the label dataset
                 self.label = None
@@ -770,7 +771,7 @@ class S_BIAD1410_Dataset(ConfigDataset):
                         f"In this case: patch shape and stride shape should be equal for optimal prediction "
                         f"performance, but found patch_shape: {patch_shape} and stride_shape: {stride_shape}!"
                     )
-        
+
             # build slice indices for raw and label data sets
             slice_builder = get_slice_builder(
                 self.raw, self.label, None, slice_builder_config
@@ -782,7 +783,6 @@ class S_BIAD1410_Dataset(ConfigDataset):
             logger.info(f"Number of patches: {self.patch_count}")
 
             self._raw_padded = None
-        
 
     def get_raw_patch(self, idx):
         return self.raw[idx]
@@ -805,11 +805,13 @@ class S_BIAD1410_Dataset(ConfigDataset):
     def __getitem__(self, idx):
         if idx >= len(self):
             raise StopIteration
-        
+
         if self.phase == "eval":
             raw_patch_transformed = self.raw_transform(self.get_raw_patch(idx))
             label_idx = get_roi_slice(self.patch_indexes[idx])
-            label_patch_transformed = self.label_transform(self.get_label_patch(label_idx))
+            label_patch_transformed = self.label_transform(
+                self.get_label_patch(label_idx)
+            )
             return raw_patch_transformed, label_patch_transformed
 
         else:
@@ -858,14 +860,16 @@ class S_BIAD1410_Dataset(ConfigDataset):
             raw = imageio.volread(self.file_path)
         label = imageio.volread(self.label_file_path)
         if self.phase == "eval":
-            assert raw.ndim in [4, 5], "Raw dataset must be 4D (NxCxHxW) or 5D (NxCxDxHxW)"
+            assert raw.ndim in [
+                4,
+                5,
+            ], "Raw dataset must be 4D (NxCxHxW) or 5D (NxCxDxHxW)"
         else:
             assert raw.ndim in [3, 4], "Raw dataset must be 3D (DxHxW) or 4D (CxDxHxW)"
             assert _volume_shape(raw) == _volume_shape(
                 label
             ), "Raw and labels have to be of the same size"
         assert label.ndim in [3, 4], "Label dataset must be 3D (DxHxW) or 4D (CxDxHxW)"
-        
 
     def get_patch_shape(self):
         return self.patch_shape
@@ -877,11 +881,11 @@ class S_BIAD1410_Dataset(ConfigDataset):
         # load data augmentation configuration
         transformer_config = phase_config["transformer"]
         # load slice builder config
-        slice_builder_config = phase_config["slice_builder"] 
+        slice_builder_config = phase_config["slice_builder"]
         # file_paths may contain both files and directories; if the file_path is a directory all H5 files inside
         # are going to be included in the final file_paths
         img_paths = traverse_S_BIAD1410_paths(phase_config["img_paths"])
-        mask_paths = traverse_S_BIAD1410_paths(phase_config["mask_paths"])
+        mask_paths = traverse_S_BIAD1410_paths(phase_config["mask_paths"], find_masks=True)
 
         roi = phase_config.get("roi", None)
 
@@ -889,12 +893,14 @@ class S_BIAD1410_Dataset(ConfigDataset):
         for i, img_path in enumerate(img_paths):
             try:
                 if phase == "eval":
-                    assert (os.path.basename(
-                        "_".join(img_path.split("_")[:-1])) in mask_paths[i],(
-                        f"Image {img_path} does not have a corresponding mask in {mask_paths[i]}")
-                    )
+                    assert (
+                        os.path.basename("_".join(img_path.split("_")[:-1]))
+                        in mask_paths[i]
+                    ), f"Image {img_path} does not have a corresponding mask in {mask_paths[i]}"
                 else:
-                    assert os.path.basename(img_path) in mask_paths[i], (f"Image {img_path} does not have a corresponding mask in {mask_paths[i]}")
+                    assert (
+                        os.path.basename(img_path) in mask_paths[i]
+                    ), f"Image {img_path} does not have a corresponding mask in {mask_paths[i]}"
                 logger.info(f"Loading {phase} set from: {img_path}...")
                 dataset = cls(
                     img_path=img_path,
