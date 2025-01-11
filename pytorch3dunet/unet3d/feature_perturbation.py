@@ -45,8 +45,6 @@ class FeatureNoisePerturbation(nn.Module):
         self.rng = torch.Generator().manual_seed(random_seed)
 
     def feature_based_noise(self, x):
-        # noise_vector = self.uni_dist.sample(x.shape[1:]).to(x.device).unsqueeze(0)
-
         noise_vector = (
             (
                 (-self.uni_range - self.uni_range)
