@@ -12,10 +12,14 @@ from tqdm import tqdm
 import wandb
 from PIL import Image as im
 
+from pytorch3dunet.augment.transforms import Relabel
 from pytorch3dunet.datasets.hdf5 import AbstractHDF5Dataset
 from pytorch3dunet.datasets.utils import SliceBuilder, remove_padding
 from pytorch3dunet.unet3d.model import UNet2D
 from pytorch3dunet.unet3d.utils import get_logger
+
+from plantseg.segmentation import dt_watershed, gasp
+from plantseg.dataprocessing import set_background_to_value
 
 logger = get_logger("UNetPredictor")
 
@@ -350,6 +354,51 @@ class DSB2018Predictor(_AbstractPredictor):
         #executor.shutdown(wait=True)
 
 
+class NucleiInstancePredictor(_AbstractPredictor):
+    def __init__(
+        self,
+        model,
+        output_dir,
+        config,
+        save_segmentation=True,
+        min_size=25,
+        **kwargs,
+    ):
+        super().__init__(model, output_dir, config, **kwargs)
+        self.save_segmentation = save_segmentation
+        self.min_size = min_size
+
+    def _slice_from_pad(self, pad):
+        if pad == 0:
+            return slice(None, None)
+        else:
+            return slice(pad, -pad)
+
+    def __call__(self, test_loader):
+        # Sets the module in evaluation mode explicitly
+        self.model.eval()
+        # initial process pool for saving results to disk
+        #executor = futures.ProcessPoolExecutor(max_workers=32)
+        # Run predictions on the entire input dataset
+        with torch.no_grad():
+            for img, path in test_loader:
+                # send batch to gpu
+                if torch.cuda.is_available():
+                    img = img.cuda(non_blocking=True)
+                # forward pass
+                if _is_2d_model(self.model):
+                    # remove the singleton z-dimension from the input
+                    img = torch.squeeze(img, dim=-3)
+                    # forward pass
+                    pred = self.model(img)
+                    pred= torch.unsqueeze(pred, dim=-3)
+                else:
+                    # forward pass
+                    pred = self.model(img)
+                
+                nuclei_IN_save_batch(self.output_dir, path, pred, self.save_segmentation, self.min_size)
+
+
 def dsb_save_batch(output_dir, path, pred, save_segmentation=True, pmaps_thershold=0.5):
     def _pmaps_to_seg(pred):
         mask = pred > pmaps_thershold
@@ -374,6 +423,34 @@ def dsb_save_batch(output_dir, path, pred, save_segmentation=True, pmaps_thersho
                     "segmentation", data=_pmaps_to_seg(single_pred), compression="gzip"
                 )
 
+def nuclei_IN_save_batch(output_dir, path, pred, save_segmentation=True, min_size: int = 25):
+    
+    def _pmaps_to_IN_seg(pred):
+        pred = np.expand_dims(pred, axis=0)
+        pred_wt = dt_watershed(pred, stacked=True, min_size=min_size)
+        gasp_pred = gasp(pred, pred_wt, post_minsize=min_size)
+        gasp_pred = set_background_to_value(gasp_pred, 0)
+        gasp_pred = Relabel()(gasp_pred).squeeze()
+        return gasp_pred
+
+    # convert to numpy array
+    for single_pred, single_path in zip(pred, path):
+        logger.info(f"Processing {single_path}")
+        single_pred = single_pred.cpu().numpy().squeeze()
+        #single_pred = single_pred.squeeze()
+
+        # save to h5 file
+        out_file = os.path.splitext(single_path)[0] + "_predictions.h5"
+        if output_dir is not None:
+            out_file = os.path.join(output_dir, os.path.split(out_file)[1])
+
+        with h5py.File(out_file, "w") as f:
+            # logger.info(f'Saving output to {out_file}')
+            f.create_dataset("predictions", data=single_pred, compression="gzip")
+            if save_segmentation:
+                f.create_dataset(
+                    "segmentation", data=_pmaps_to_IN_seg(single_pred), compression="gzip"
+                )
 
 class PatchWisePredictor(_AbstractPredictor):
     """
