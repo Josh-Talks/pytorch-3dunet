@@ -110,7 +110,7 @@ class AbstractUNet(nn.Module):
         if self.feature_perturbation is not None:
             x = self.feature_perturbation(x)
         # decoder part
-        decoder_features = []
+        decoder_features = [x]
         for decoder, encoder_features in zip(self.decoders, encoders_features):
             # pass the output from the corresponding encoder and the output
             # of the previous decoder
