@@ -693,6 +693,7 @@ class S_BIAD1410_Dataset(ConfigDataset):
         slice_builder_config=None,
         global_normalization=True,
         global_percentiles=None,
+        image_key="predictions",
     ):
         assert phase in ["train", "val", "test", "eval"]
 
@@ -709,9 +710,9 @@ class S_BIAD1410_Dataset(ConfigDataset):
             if self.file_path.endswith((".h5", ".hdf5")):
                 with h5py.File(self.file_path, "r") as f:
                     if self.roi is not None:
-                        self.raw = f["predictions"][self.roi]
+                        self.raw = f[image_key][self.roi]
                     else:
-                        self.raw = f["predictions"][:]
+                        self.raw = f[image_key][:]
             elif self.file_path.endswith(".tif"):
                 self.raw = imageio.volread(self.file_path)
                 if self.roi is not None:
@@ -729,9 +730,9 @@ class S_BIAD1410_Dataset(ConfigDataset):
             if self.file_path.endswith((".h5", ".hdf5")):
                 with h5py.File(self.file_path, "r") as f:
                     if self.roi is not None:
-                        self.raw = f["predictions"][self.roi]
+                        self.raw = f[image_key][self.roi]
                     else:
-                        self.raw = f["predictions"][:]
+                        self.raw = f[image_key][:]
             elif self.file_path.endswith(".tif"):
                 self.raw = imageio.volread(self.file_path)
                 if self.roi is not None:
@@ -885,7 +886,9 @@ class S_BIAD1410_Dataset(ConfigDataset):
         # file_paths may contain both files and directories; if the file_path is a directory all H5 files inside
         # are going to be included in the final file_paths
         img_paths = traverse_S_BIAD1410_paths(phase_config["img_paths"])
-        mask_paths = traverse_S_BIAD1410_paths(phase_config["mask_paths"], find_masks=True)
+        mask_paths = traverse_S_BIAD1410_paths(
+            phase_config["mask_paths"], find_masks=True
+        )
 
         roi = phase_config.get("roi", None)
 
@@ -915,6 +918,7 @@ class S_BIAD1410_Dataset(ConfigDataset):
                         "global_normalization", None
                     ),
                     global_percentiles=dataset_config.get("global_percentiles", None),
+                    image_key=dataset_config.get("image_key", "predictions"),
                 )
                 datasets.append(dataset)
             except Exception:
@@ -936,6 +940,8 @@ class Abstract_TIF_Dataset(ConfigDataset):
         expand_dims=True,
         global_norm=False,
         percentiles=None,
+        image_key="predictions",
+        mask_key=None,
     ):
         assert os.path.isdir(image_dir), f"{image_dir} is not a directory"
         assert os.path.isdir(mask_dir), f"{mask_dir} is not a directory"
@@ -949,7 +955,7 @@ class Abstract_TIF_Dataset(ConfigDataset):
         if filenames_path is not None:
             self.file_names = read_file_names(filenames_path)
 
-        self.images, self.paths = self._load_files(image_dir, expand_dims)
+        self.images, self.paths = self._load_files(image_dir, expand_dims, image_key)
         self.file_path = image_dir
 
         if percentiles is None:
@@ -981,7 +987,7 @@ class Abstract_TIF_Dataset(ConfigDataset):
         if phase != "test":
             # load labeled images
             assert os.path.isdir(mask_dir)
-            self.masks, _ = self._load_files(mask_dir, expand_dims)
+            self.masks, _ = self._load_files(mask_dir, expand_dims, mask_key)
             assert len(self.images) == len(self.masks)
             # load label images transformer
             self.masks_transform = transformer.label_transform()
@@ -1012,7 +1018,7 @@ class Abstract_TIF_Dataset(ConfigDataset):
         pass
 
     @abstractmethod
-    def _load_files(self, dir, expand_dims):
+    def _load_files(self, dir, expand_dims, key):
         pass
 
 
@@ -1035,6 +1041,8 @@ class Standard_TIF_Dataset(Abstract_TIF_Dataset):
         expand_dims=True,
         global_norm=False,
         percentiles=None,
+        image_key="predictions",
+        mask_key=None,
     ):
         super().__init__(
             image_dir=image_dir,
@@ -1044,27 +1052,30 @@ class Standard_TIF_Dataset(Abstract_TIF_Dataset):
             expand_dims=expand_dims,
             global_norm=global_norm,
             percentiles=percentiles,
+            image_key=image_key,
+            mask_key=mask_key,
         )
 
-    def _load_files(self, dir, expand_dims):
+    def _load_files(self, dir, expand_dims, key):
         files_data = []
         paths = []
         for file in sorted(os.listdir(dir)):
-            path = os.path.join(dir, file)
-            if file.endswith((".tif", ".png")):
-                img = np.asarray(imageio.imread(path))
-            # check if file ends in ['.h5', '.hdf5']
-            elif file.endswith((".h5", ".hdf5")):
-                with h5py.File(path, "r") as f:
-                    img = f["predictions"][:]
-            if expand_dims:
-                dims = img.ndim
-                img = np.expand_dims(img, axis=0)
-                if dims == 3:
-                    img = np.transpose(img, (3, 0, 1, 2))
+            if not file.startswith("."):
+                path = os.path.join(dir, file)
+                if file.endswith((".tif", ".png")):
+                    img = np.asarray(imageio.imread(path))
+                # check if file ends in ['.h5', '.hdf5']
+                elif file.endswith((".h5", ".hdf5")):
+                    with h5py.File(path, "r") as f:
+                        img = f[key][:]
+                if expand_dims:
+                    dims = img.ndim
+                    img = np.expand_dims(img, axis=0)
+                    if dims == 3:
+                        img = np.transpose(img, (3, 0, 1, 2))
 
-            files_data.append(img)
-            paths.append(path)
+                files_data.append(img)
+                paths.append(path)
 
         return files_data, paths
 
@@ -1086,6 +1097,8 @@ class Standard_TIF_Dataset(Abstract_TIF_Dataset):
                 expand_dims=expand_dims,
                 global_norm=dataset_config.get("global_norm", False),
                 percentiles=dataset_config.get("percentiles", None),
+                image_key=dataset_config.get("image_key", "predictions"),
+                mask_key=dataset_config.get("mask_key", None),
             )
         ]
 
@@ -1100,6 +1113,8 @@ class Hoechst_Dataset(Abstract_TIF_Dataset):
         expand_dims=True,
         global_norm=False,
         percentiles=None,
+        image_key="predictions",
+        mask_key=None,
     ):
         super().__init__(
             image_dir=image_dir,
@@ -1109,28 +1124,31 @@ class Hoechst_Dataset(Abstract_TIF_Dataset):
             expand_dims=expand_dims,
             global_norm=global_norm,
             percentiles=percentiles,
+            image_key=image_key,
+            mask_key=mask_key,
         )
 
-    def _load_files(self, dir, expand_dims):
+    def _load_files(self, dir, expand_dims, key):
         files_data = []
         paths = []
         for file in sorted(os.listdir(dir)):
-            path = os.path.join(dir, file)
-            if file.endswith((".tif", ".png")):
-                img = np.asarray(imageio.imread(path))
-            elif file.endswith((".h5", ".hdf5")):
-                with h5py.File(path, "r") as f:
-                    img = f["predictions"][:]
-            if img.ndim == 3:
-                img = transforms.RgbToLabel()(img)
-            if expand_dims:
-                dims = img.ndim
-                img = np.expand_dims(img, axis=0)
-                if dims == 3:
-                    img = np.transpose(img, (3, 0, 1, 2))
+            if not file.startswith("."):
+                path = os.path.join(dir, file)
+                if file.endswith((".tif", ".png")):
+                    img = np.asarray(imageio.imread(path))
+                elif file.endswith((".h5", ".hdf5")):
+                    with h5py.File(path, "r") as f:
+                        img = f[key][:]
+                if img.ndim == 3:
+                    img = transforms.RgbToLabel()(img)
+                if expand_dims:
+                    dims = img.ndim
+                    img = np.expand_dims(img, axis=0)
+                    if dims == 3:
+                        img = np.transpose(img, (3, 0, 1, 2))
 
-            files_data.append(img)
-            paths.append(path)
+                files_data.append(img)
+                paths.append(path)
 
         return files_data, paths
 
@@ -1152,6 +1170,8 @@ class Hoechst_Dataset(Abstract_TIF_Dataset):
                 expand_dims=expand_dims,
                 global_norm=dataset_config.get("global_norm", False),
                 percentiles=dataset_config.get("percentiles", None),
+                image_key=dataset_config.get("image_key", "predictions"),
+                mask_key=dataset_config.get("mask_key", None),
             )
         ]
 
@@ -1166,6 +1186,8 @@ class HeLaNuc_Dataset(Abstract_TIF_Dataset):
         expand_dims=True,
         global_norm=False,
         percentiles=None,
+        image_key="predictions",
+        mask_key=None,
     ):
         super().__init__(
             image_dir=image_dir,
@@ -1175,29 +1197,32 @@ class HeLaNuc_Dataset(Abstract_TIF_Dataset):
             expand_dims=expand_dims,
             global_norm=global_norm,
             percentiles=percentiles,
+            image_key=image_key,
+            mask_key=mask_key,
         )
 
-    def _load_files(self, dir, expand_dims):
+    def _load_files(self, dir, expand_dims, key):
         files_data = []
         paths = []
         for file in sorted(os.listdir(dir)):
-            path = os.path.join(dir, file)
-            if file.endswith((".tif", ".png")):
-                img = np.asarray(imageio.imread(path))
-            elif file.endswith((".h5", ".hdf5")):
-                with h5py.File(path, "r") as f:
-                    img = f["predictions"][:]
-            if img.ndim == 3:
-                # select last channel corresponding to nuclei channel
-                img = img[:, :, 2]
-            if expand_dims:
-                dims = img.ndim
-                img = np.expand_dims(img, axis=0)
-                if dims == 3:
-                    img = np.transpose(img, (3, 0, 1, 2))
+            if not file.startswith("."):
+                path = os.path.join(dir, file)
+                if file.endswith((".tif", ".png")):
+                    img = np.asarray(imageio.imread(path))
+                elif file.endswith((".h5", ".hdf5")):
+                    with h5py.File(path, "r") as f:
+                        img = f[key][:]
+                if img.ndim == 3:
+                    # select last channel corresponding to nuclei channel
+                    img = img[:, :, 2]
+                if expand_dims:
+                    dims = img.ndim
+                    img = np.expand_dims(img, axis=0)
+                    if dims == 3:
+                        img = np.transpose(img, (3, 0, 1, 2))
 
-            files_data.append(img)
-            paths.append(path)
+                files_data.append(img)
+                paths.append(path)
 
         return files_data, paths
 
@@ -1219,6 +1244,8 @@ class HeLaNuc_Dataset(Abstract_TIF_Dataset):
                 expand_dims=expand_dims,
                 global_norm=dataset_config.get("global_norm", False),
                 percentiles=dataset_config.get("percentiles", None),
+                image_key=dataset_config.get("image_key", "predictions"),
+                mask_key=dataset_config.get("mask_key", None),
             )
         ]
 
@@ -1245,6 +1272,8 @@ class TIF_txt_Dataset(Abstract_TIF_Dataset):
         expand_dims=True,
         global_norm=False,
         percentiles=None,
+        image_key="predictions",
+        mask_key=None,
     ):
         super().__init__(
             image_dir=image_dir,
@@ -1255,9 +1284,11 @@ class TIF_txt_Dataset(Abstract_TIF_Dataset):
             expand_dims=expand_dims,
             global_norm=global_norm,
             percentiles=percentiles,
+            image_key=image_key,
+            mask_key=mask_key,
         )
 
-    def _load_files(self, dir, expand_dims):
+    def _load_files(self, dir, expand_dims, key):
         files_data = []
         paths = []
         for file in self.file_names:
@@ -1266,7 +1297,7 @@ class TIF_txt_Dataset(Abstract_TIF_Dataset):
                 img = np.asarray(imageio.imread(path))
             elif path.endswith((".h5", ".hdf5")):
                 with h5py.File(path, "r") as f:
-                    img = f["predictions"][:]
+                    img = f[key][:]
             if img.ndim == 3:
                 img = img[:, :, 0]
             if expand_dims:
@@ -1299,5 +1330,7 @@ class TIF_txt_Dataset(Abstract_TIF_Dataset):
                 expand_dims=expand_dims,
                 global_norm=dataset_config.get("global_norm", False),
                 percentiles=dataset_config.get("percentiles", None),
+                image_key=dataset_config.get("image_key", "predictions"),
+                mask_key=dataset_config.get("mask_key", None),
             )
         ]
