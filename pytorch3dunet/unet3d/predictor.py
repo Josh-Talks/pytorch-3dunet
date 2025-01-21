@@ -327,7 +327,7 @@ class DSB2018Predictor(_AbstractPredictor):
         # Sets the module in evaluation mode explicitly
         self.model.eval()
         # initial process pool for saving results to disk
-        #executor = futures.ProcessPoolExecutor(max_workers=32)
+        # executor = futures.ProcessPoolExecutor(max_workers=32)
         # Run predictions on the entire input dataset
         with torch.no_grad():
             for img, path in test_loader:
@@ -341,17 +341,23 @@ class DSB2018Predictor(_AbstractPredictor):
                     # forward pass
                     pred = self.model(img)
                     # add the singleton z-dimension to the output
-                    pred= torch.unsqueeze(pred, dim=-3)
+                    pred = torch.unsqueeze(pred, dim=-3)
                 else:
                     # forward pass
                     pred = self.model(img)
-                
-                dsb_save_batch(self.output_dir, path, pred, self.save_segmentation, self.pmaps_threshold)
 
-                #executor.submit(dsb_save_batch, self.output_dir, path)
+                dsb_save_batch(
+                    self.output_dir,
+                    path,
+                    pred,
+                    self.save_segmentation,
+                    self.pmaps_threshold,
+                )
 
-        #print("Waiting for all predictions to be saved to disk...")
-        #executor.shutdown(wait=True)
+                # executor.submit(dsb_save_batch, self.output_dir, path)
+
+        # print("Waiting for all predictions to be saved to disk...")
+        # executor.shutdown(wait=True)
 
 
 class NucleiInstancePredictor(_AbstractPredictor):
@@ -378,7 +384,7 @@ class NucleiInstancePredictor(_AbstractPredictor):
         # Sets the module in evaluation mode explicitly
         self.model.eval()
         # initial process pool for saving results to disk
-        #executor = futures.ProcessPoolExecutor(max_workers=32)
+        # executor = futures.ProcessPoolExecutor(max_workers=32)
         # Run predictions on the entire input dataset
         with torch.no_grad():
             for img, path in test_loader:
@@ -391,12 +397,14 @@ class NucleiInstancePredictor(_AbstractPredictor):
                     img = torch.squeeze(img, dim=-3)
                     # forward pass
                     pred = self.model(img)
-                    pred= torch.unsqueeze(pred, dim=-3)
+                    pred = torch.unsqueeze(pred, dim=-3)
                 else:
                     # forward pass
                     pred = self.model(img)
-                
-                nuclei_IN_save_batch(self.output_dir, path, pred, self.save_segmentation, self.min_size)
+
+                nuclei_IN_save_batch(
+                    self.output_dir, path, pred, self.save_segmentation, self.min_size
+                )
 
 
 def dsb_save_batch(output_dir, path, pred, save_segmentation=True, pmaps_thershold=0.5):
@@ -408,7 +416,7 @@ def dsb_save_batch(output_dir, path, pred, save_segmentation=True, pmaps_thersho
     for single_pred, single_path in zip(pred, path):
         logger.info(f"Processing {single_path}")
         single_pred = single_pred.cpu().numpy().squeeze()
-        #single_pred = single_pred.squeeze()
+        # single_pred = single_pred.squeeze()
 
         # save to h5 file
         out_file = os.path.splitext(single_path)[0] + "_predictions.h5"
@@ -423,21 +431,16 @@ def dsb_save_batch(output_dir, path, pred, save_segmentation=True, pmaps_thersho
                     "segmentation", data=_pmaps_to_seg(single_pred), compression="gzip"
                 )
 
-def nuclei_IN_save_batch(output_dir, path, pred, save_segmentation=True, min_size: int = 25):
-    
-    def _pmaps_to_IN_seg(pred):
-        pred = np.expand_dims(pred, axis=0)
-        pred_wt = dt_watershed(pred, stacked=True, min_size=min_size)
-        gasp_pred = gasp(pred, pred_wt, post_minsize=min_size)
-        gasp_pred = set_background_to_value(gasp_pred, 0)
-        gasp_pred = Relabel()(gasp_pred).squeeze()
-        return gasp_pred
+
+def nuclei_IN_save_batch(
+    output_dir, path, pred, save_segmentation=True, min_size: int = 25
+):
 
     # convert to numpy array
     for single_pred, single_path in zip(pred, path):
         logger.info(f"Processing {single_path}")
         single_pred = single_pred.cpu().numpy().squeeze()
-        #single_pred = single_pred.squeeze()
+        # single_pred = single_pred.squeeze()
 
         # save to h5 file
         out_file = os.path.splitext(single_path)[0] + "_predictions.h5"
@@ -449,8 +452,23 @@ def nuclei_IN_save_batch(output_dir, path, pred, save_segmentation=True, min_siz
             f.create_dataset("predictions", data=single_pred, compression="gzip")
             if save_segmentation:
                 f.create_dataset(
-                    "segmentation", data=_pmaps_to_IN_seg(single_pred), compression="gzip"
+                    "segmentation",
+                    data=pmaps_to_IN_seg(single_pred, min_size),
+                    compression="gzip",
                 )
+
+
+def pmaps_to_IN_seg(pred, min_size):
+    if pred.ndim == 2:
+        pred = np.expand_dims(pred, axis=0)
+    else:
+        assert pred.ndim == 3, f"Expected 2D or 3D array, got {pred.ndim}D array"
+    pred_wt = dt_watershed(pred, stacked=True, min_size=min_size)
+    gasp_pred = gasp(pred, pred_wt, post_minsize=min_size)
+    gasp_pred = set_background_to_value(gasp_pred, 0)
+    gasp_pred = Relabel()(gasp_pred).squeeze()
+    return gasp_pred
+
 
 class PatchWisePredictor(_AbstractPredictor):
     """
@@ -468,6 +486,7 @@ class PatchWisePredictor(_AbstractPredictor):
         out_channels: int,
         output_dataset: str = "predictions",
         save_segmentation: bool = False,
+        min_size: int = 25,
         prediction_channel: int = None,
         save_suffix: str = "_predictions",
         output_file_name: Optional[str] = None,
@@ -486,9 +505,10 @@ class PatchWisePredictor(_AbstractPredictor):
             log_images,
             **kwargs,
         )
+        self.min_size = min_size
 
     def __call__(self, test_loader):
-        #assert isinstance(test_loader.dataset, AbstractHDF5Dataset)
+        # assert isinstance(test_loader.dataset, AbstractHDF5Dataset)
         logger.info(f"Processing '{test_loader.dataset.file_path}'...")
         start = time.perf_counter()
 
@@ -518,6 +538,7 @@ class PatchWisePredictor(_AbstractPredictor):
             # allocate output prediction arrays
             logger.info("Allocating prediction arrays...")
             prediction_map = np.zeros(prediction_maps_shape, dtype="float32")
+            segmentation_map = np.zeros(prediction_maps_shape, dtype="uint16")
             # intialise list to save patch location indices
             patch_indices = []
 
@@ -592,6 +613,11 @@ class PatchWisePredictor(_AbstractPredictor):
                             channel_slice,
                         )
                         pred = np.expand_dims(pred, axis=0)
+                        if self.save_segmentation:
+                            segm = pmaps_to_IN_seg(pred.squeeze(), self.min_size)
+                            segm = np.expand_dims(segm, axis=(0, 1, 2))
+                            segmentation_map[*index] = segm
+
                         # accumulate probabilities into the output prediction array
                         prediction_map[*index] = pred
                         # save patch location indices
@@ -605,25 +631,21 @@ class PatchWisePredictor(_AbstractPredictor):
             logger.info(
                 f"Finished inference in {time.perf_counter() - start:.2f} seconds"
             )
-            # save results
-            output_type = (
-                "segmentation" if self.save_segmentation else "probability maps"
-            )
-            logger.info(f"Saving {output_type} to: {output_file}")
-            self._save_results(prediction_map, patch_indices, h5_output_file)
 
-    def _save_results(self, prediction_map, patch_indices, output_file):
+            logger.info(f"Saving output to: {output_file}")
+            self._save_results(prediction_map, h5_output_file, self.output_dataset)
+            self._save_results(np.array(patch_indices), h5_output_file, "patch_index")
+            if self.save_segmentation:
+                self._save_results(segmentation_map, h5_output_file, "segmentation")
+
+    @staticmethod
+    def _save_results(data, output_file, out_key):
         output_file.create_dataset(
-            self.output_dataset,
-            data=prediction_map,
+            out_key,
+            data=data,
             compression="gzip",
         )
-        output_file.create_dataset(
-            "patch_index",
-            data=np.array(patch_indices),
-            compression="gzip",
-        )
-    
+
     def _log_wandb_images(self, image_data, caption, log_name, pred_step):
         formatted_image = (image_data * 255 / np.max(image_data)).astype("uint8")
         image = wandb.Image(
@@ -766,7 +788,7 @@ class PatchWiseFeatureExtractor(_AbstractPredictor):
                     prediction = prediction.cpu().numpy()
 
                     # convert features to numpy array
-                    #features = [f.cpu().numpy() for f in features]
+                    # features = [f.cpu().numpy() for f in features]
                     features = features[self.layer_id].cpu().numpy()
                     # for each batch sample
                     for j, (pred, patch_index) in enumerate(zip(prediction, indices)):
@@ -808,7 +830,9 @@ class PatchWiseFeatureExtractor(_AbstractPredictor):
                 "segmentation" if self.save_segmentation else "probability maps"
             )
             logger.info(f"Saving {output_type} to: {output_file}")
-            self._save_results(prediction_map, patch_indices, feature_map, h5_output_file)
+            self._save_results(
+                prediction_map, patch_indices, feature_map, h5_output_file
+            )
 
     def _save_results(self, prediction_map, patch_indices, feature_map, output_file):
         output_file.create_dataset(
@@ -826,7 +850,7 @@ class PatchWiseFeatureExtractor(_AbstractPredictor):
             data=np.array(feature_map),
             compression="gzip",
         )
-    
+
     def _log_wandb_images(self, image_data, caption, log_name, pred_step):
         formatted_image = (image_data * 255 / np.max(image_data)).astype("uint8")
         image = wandb.Image(
