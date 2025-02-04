@@ -942,6 +942,7 @@ class Abstract_TIF_Dataset(ConfigDataset):
         percentiles=None,
         image_key="predictions",
         mask_key=None,
+        prediction_channel=None,
     ):
         assert os.path.isdir(image_dir), f"{image_dir} is not a directory"
         assert os.path.isdir(mask_dir), f"{mask_dir} is not a directory"
@@ -955,7 +956,7 @@ class Abstract_TIF_Dataset(ConfigDataset):
         if filenames_path is not None:
             self.file_names = read_file_names(filenames_path)
 
-        self.images, self.paths = self._load_files(image_dir, expand_dims, image_key)
+        self.images, self.paths = self._load_files(image_dir, expand_dims, image_key, prediction_channel)
         self.file_path = image_dir
 
         if percentiles is None:
@@ -1018,7 +1019,7 @@ class Abstract_TIF_Dataset(ConfigDataset):
         pass
 
     @abstractmethod
-    def _load_files(self, dir, expand_dims, key):
+    def _load_files(self, dir, expand_dims, key, prediction_channel=None):
         pass
 
 
@@ -1043,6 +1044,7 @@ class Standard_TIF_Dataset(Abstract_TIF_Dataset):
         percentiles=None,
         image_key="predictions",
         mask_key=None,
+        prediction_channel=None,
     ):
         super().__init__(
             image_dir=image_dir,
@@ -1054,9 +1056,10 @@ class Standard_TIF_Dataset(Abstract_TIF_Dataset):
             percentiles=percentiles,
             image_key=image_key,
             mask_key=mask_key,
+            prediction_channel=prediction_channel,
         )
 
-    def _load_files(self, dir, expand_dims, key):
+    def _load_files(self, dir, expand_dims, key, prediction_channel=None):
         files_data = []
         paths = []
         for file in sorted(os.listdir(dir)):
@@ -1068,6 +1071,8 @@ class Standard_TIF_Dataset(Abstract_TIF_Dataset):
                 elif file.endswith((".h5", ".hdf5")):
                     with h5py.File(path, "r") as f:
                         img = f[key][:]
+                    if prediction_channel is not None:
+                        img = img[prediction_channel]
                 if expand_dims:
                     dims = img.ndim
                     img = np.expand_dims(img, axis=0)
@@ -1099,6 +1104,7 @@ class Standard_TIF_Dataset(Abstract_TIF_Dataset):
                 percentiles=dataset_config.get("percentiles", None),
                 image_key=dataset_config.get("image_key", "predictions"),
                 mask_key=dataset_config.get("mask_key", None),
+                prediction_channel=dataset_config.get("prediction_channel", None),
             )
         ]
 
@@ -1115,6 +1121,7 @@ class Hoechst_Dataset(Abstract_TIF_Dataset):
         percentiles=None,
         image_key="predictions",
         mask_key=None,
+        prediction_channel=None,
     ):
         super().__init__(
             image_dir=image_dir,
@@ -1126,9 +1133,10 @@ class Hoechst_Dataset(Abstract_TIF_Dataset):
             percentiles=percentiles,
             image_key=image_key,
             mask_key=mask_key,
+            prediction_channel=prediction_channel,
         )
 
-    def _load_files(self, dir, expand_dims, key):
+    def _load_files(self, dir, expand_dims, key, prediction_channel=None):
         files_data = []
         paths = []
         for file in sorted(os.listdir(dir)):
@@ -1139,6 +1147,8 @@ class Hoechst_Dataset(Abstract_TIF_Dataset):
                 elif file.endswith((".h5", ".hdf5")):
                     with h5py.File(path, "r") as f:
                         img = f[key][:]
+                    if prediction_channel is not None:
+                        img = img[prediction_channel]
                 if img.ndim == 3:
                     img = transforms.RgbToLabel()(img)
                 if expand_dims:
@@ -1172,6 +1182,7 @@ class Hoechst_Dataset(Abstract_TIF_Dataset):
                 percentiles=dataset_config.get("percentiles", None),
                 image_key=dataset_config.get("image_key", "predictions"),
                 mask_key=dataset_config.get("mask_key", None),
+                prediction_channel=dataset_config.get("prediction_channel", None),
             )
         ]
 
@@ -1188,6 +1199,7 @@ class HeLaNuc_Dataset(Abstract_TIF_Dataset):
         percentiles=None,
         image_key="predictions",
         mask_key=None,
+        prediction_channel=None,
     ):
         super().__init__(
             image_dir=image_dir,
@@ -1199,9 +1211,10 @@ class HeLaNuc_Dataset(Abstract_TIF_Dataset):
             percentiles=percentiles,
             image_key=image_key,
             mask_key=mask_key,
+            prediction_channel=prediction_channel,
         )
 
-    def _load_files(self, dir, expand_dims, key):
+    def _load_files(self, dir, expand_dims, key, prediction_channel=None):
         files_data = []
         paths = []
         for file in sorted(os.listdir(dir)):
@@ -1212,6 +1225,8 @@ class HeLaNuc_Dataset(Abstract_TIF_Dataset):
                 elif file.endswith((".h5", ".hdf5")):
                     with h5py.File(path, "r") as f:
                         img = f[key][:]
+                    if prediction_channel is not None:
+                        img = img[prediction_channel]
                 if img.ndim == 3:
                     # select last channel corresponding to nuclei channel
                     img = img[:, :, 2]
@@ -1246,6 +1261,7 @@ class HeLaNuc_Dataset(Abstract_TIF_Dataset):
                 percentiles=dataset_config.get("percentiles", None),
                 image_key=dataset_config.get("image_key", "predictions"),
                 mask_key=dataset_config.get("mask_key", None),
+                prediction_channel=dataset_config.get("prediction_channel", None),
             )
         ]
 
@@ -1274,6 +1290,7 @@ class TIF_txt_Dataset(Abstract_TIF_Dataset):
         percentiles=None,
         image_key="predictions",
         mask_key=None,
+        prediction_channel=None,
     ):
         super().__init__(
             image_dir=image_dir,
@@ -1286,9 +1303,10 @@ class TIF_txt_Dataset(Abstract_TIF_Dataset):
             percentiles=percentiles,
             image_key=image_key,
             mask_key=mask_key,
+            prediction_channel=prediction_channel,
         )
 
-    def _load_files(self, dir, expand_dims, key):
+    def _load_files(self, dir, expand_dims, key, prediction_channel=None):
         files_data = []
         paths = []
         for file in self.file_names:
@@ -1298,6 +1316,8 @@ class TIF_txt_Dataset(Abstract_TIF_Dataset):
             elif path.endswith((".h5", ".hdf5")):
                 with h5py.File(path, "r") as f:
                     img = f[key][:]
+                if prediction_channel is not None:
+                    img = img[prediction_channel]
             if img.ndim == 3:
                 img = img[:, :, 0]
             if expand_dims:
@@ -1332,5 +1352,6 @@ class TIF_txt_Dataset(Abstract_TIF_Dataset):
                 percentiles=dataset_config.get("percentiles", None),
                 image_key=dataset_config.get("image_key", "predictions"),
                 mask_key=dataset_config.get("mask_key", None),
+                prediction_channel=dataset_config.get("prediction_channel", None),
             )
         ]
