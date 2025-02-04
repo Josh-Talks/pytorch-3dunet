@@ -28,7 +28,7 @@ def get_predictor(model, config):
     return predictor_class(model, output_dir, out_channels, **predictor_config)
 
 
-def predict(config):
+def predict(config:dict):
     # setup wandb logging
     wandb.init(
         project=config["wandb"]["project"],
@@ -43,7 +43,7 @@ def predict(config):
     # Load model state
     model_path = config['model_path']
     logger.info(f'Loading model from {model_path}...')
-    utils.load_checkpoint(model_path, model)
+    utils.load_checkpoint(model_path, model, model_key=config.get('model_key', 'model_state_dict'))
     # use DataParallel if more than 1 GPU available
 
     if torch.cuda.device_count() > 1 and not config['device'] == 'cpu':
