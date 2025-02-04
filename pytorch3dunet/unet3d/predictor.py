@@ -18,8 +18,23 @@ from pytorch3dunet.datasets.utils import SliceBuilder, remove_padding
 from pytorch3dunet.unet3d.model import UNet2D
 from pytorch3dunet.unet3d.utils import get_logger
 
-from plantseg.segmentation import dt_watershed, gasp
-from plantseg.dataprocessing import set_background_to_value
+# check plant-seg version if 1.8 try import as below
+import pkg_resources
+
+try:
+    plantseg_version = pkg_resources.get_distribution("plantseg").version
+    if plantseg_version < '2.0':
+        from plantseg.segmentation import dt_watershed, gasp
+        from plantseg.dataprocessing import set_background_to_value
+    elif plantseg_version >= '2.0':
+        from plantseg.functionals.segmentation import dt_watershed, gasp
+        from plantseg.functionals.dataprocessing import set_background_to_value
+    else:
+        raise ImportError("Unsupported plantseg version")
+except ImportError as e:
+    print(f"Error importing plantseg: {e}")
+    raise
+
 
 logger = get_logger("UNetPredictor")
 
@@ -365,12 +380,19 @@ class NucleiInstancePredictor(_AbstractPredictor):
         self,
         model,
         output_dir,
-        config,
+        output_channels,
         save_segmentation=True,
+        prediction_channel=None,
         min_size=25,
         **kwargs,
     ):
-        super().__init__(model, output_dir, config, **kwargs)
+        super().__init__(
+            model,
+            output_dir,
+            output_channels,
+            prediction_channel=prediction_channel,
+            **kwargs,
+        )
         self.save_segmentation = save_segmentation
         self.min_size = min_size
 
@@ -401,6 +423,12 @@ class NucleiInstancePredictor(_AbstractPredictor):
                 else:
                     # forward pass
                     pred = self.model(img)
+
+                if self.prediction_channel is not None:
+                    # use only the specified channel
+                    pred = pred[
+                        :, self.prediction_channel : (self.prediction_channel + 1)
+                    ]
 
                 nuclei_IN_save_batch(
                     self.output_dir, path, pred, self.save_segmentation, self.min_size
