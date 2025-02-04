@@ -290,7 +290,7 @@ def default_prediction_collate(batch):
 
 
 def calculate_stats(
-        img: Union[np.array|List[np.array]], 
+        img: Union[np.array, List[np.array]], 
         skip: bool = False, 
         percentile_min:Optional[float]=None, 
         percentile_max:Optional[float]=None,
