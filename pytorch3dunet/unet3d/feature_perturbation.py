@@ -2,15 +2,18 @@ import torch
 from torch import nn
 import numpy as np
 from torch.distributions.uniform import Uniform
+from pytorch3dunet.unet3d.utils import get_class
 
 
 class DropOutPerturbation(nn.Module):
-    def __init__(self, drop_rate=0.3, spatial_dropout=True, random_seed=1, **kwargs):
+    def __init__(self, drop_rate=0.3, spatial_dropout=True, random_seed=42, **kwargs):
         super(DropOutPerturbation, self).__init__()
         # self.dropout = (
         #    nn.Dropout2d(p=drop_rate) if spatial_dropout else nn.Dropout(drop_rate)
         # )
-        self.dropout = Dropout2d(p=drop_rate) if spatial_dropout else Dropout(drop_rate)
+        self.dropout = (
+            Dropout2d(p=drop_rate, random_seed=random_seed) if spatial_dropout else Dropout(drop_rate, random_seed)
+        )
 
     def forward(self, x):
         x = self.dropout(x)
@@ -120,3 +123,10 @@ class Dropout2d(nn.Module):
             > self.p
         ).float().to(x.device)
         return mask * x * (1.0 / (1 - self.p))
+
+
+def get_feature_perturbation(perturbation_config):
+    perturbation_class = get_class(perturbation_config['name'], modules=[
+        'pytorch3dunet.unet3d.feature_perturbation'
+    ])
+    return perturbation_class(**perturbation_config["params"])
