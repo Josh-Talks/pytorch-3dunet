@@ -999,6 +999,7 @@ class Abstract_TIF_Dataset(ConfigDataset):
             self.masks_transform = None
         
         self.min_obj_size = min_object_size
+        self.image_key = image_key
 
     def __getitem__(self, idx):
         if idx >= len(self):
@@ -1015,8 +1016,6 @@ class Abstract_TIF_Dataset(ConfigDataset):
                 mask = skimage.morphology.remove_small_objects(
                     mask, min_size=self.min_obj_size
                 )
-            raw_out = self.raw_transform(img)
-            mask_out = self.masks_transform(mask)
             return self.raw_transform(img), self.masks_transform(mask)
         else:
             return self.raw_transform(img), self.paths[idx]
