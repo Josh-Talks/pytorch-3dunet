@@ -11,8 +11,11 @@ class DropOutPerturbation(nn.Module):
         # self.dropout = (
         #    nn.Dropout2d(p=drop_rate) if spatial_dropout else nn.Dropout(drop_rate)
         # )
-        self.dropout = (
-            Dropout2d(p=drop_rate, random_seed=random_seed) if spatial_dropout else Dropout(drop_rate, random_seed)
+        #self.dropout = (
+        #    Dropout2d(p=drop_rate, random_seed=random_seed) if spatial_dropout else Dropout(drop_rate, random_seed)
+        #)
+        self.dropout =(
+            Dropout2dFixedProportion(proportion=drop_rate, random_seed=random_seed) if spatial_dropout else Dropout(drop_rate, random_seed)
         )
 
     def forward(self, x):
@@ -122,6 +125,38 @@ class Dropout2d(nn.Module):
             )
             > self.p
         ).float().to(x.device)
+        return mask * x * (1.0 / (1 - self.p))
+    
+
+class Dropout2dFixedProportion(nn.Module):
+    def __init__(self, proportion: float = 0.5, random_seed: int = 42):
+        super(Dropout2dFixedProportion, self).__init__()
+        if proportion < 0 or proportion > 1:
+            raise ValueError(
+                "dropout proportion has to be between 0 and 1, but got {}".format(proportion)
+            )
+        self.p = proportion
+        self.rng = torch.Generator().manual_seed(random_seed)
+
+    def forward(self, x: torch.Tensor) -> torch.Tensor:
+        """Forward pass.
+
+        Args:
+            x (torch.Tensor): Input tensor. shape (N, C, H, W)
+
+        Returns:
+            (torch.Tensor): Output tensor. shape (N, C, H, W)
+        """
+        num_feature_maps = x.size(1)
+        num_drop = int(torch.ceil(torch.tensor(self.p * num_feature_maps)).item())
+        
+        # Create a mask with all ones
+        mask = torch.ones((x.size(0), num_feature_maps, 1, 1), device=x.device)
+        
+        # Randomly select feature maps to drop
+        drop_indices = torch.randperm(num_feature_maps, generator=self.rng)[:num_drop]
+        mask[:, drop_indices, :, :] = 0
+        
         return mask * x * (1.0 / (1 - self.p))
 
 
