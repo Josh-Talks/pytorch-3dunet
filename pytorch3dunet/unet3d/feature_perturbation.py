@@ -6,7 +6,15 @@ from pytorch3dunet.unet3d.utils import get_class
 
 
 class DropOutPerturbation(nn.Module):
-    def __init__(self, drop_rate=0.3, spatial_dropout=True, random_seed=42, **kwargs):
+    def __init__(self, drop_rate=0.3, spatial_dropout=True, layers=[0], random_seed=42, **kwargs):
+        """Dropout perturbation.
+
+        Args:
+            drop_rate (float, optional): proportion of layers to be dropped. Defaults to 0.3.
+            spatial_dropout (bool, optional): drop whole feature maps if True. Defaults to True.
+            layers (list, optional): layers of decoder at which dropout applied 0==bottle_neck. Defaults to [0].
+            random_seed (int, optional): random seed for dropout layer. Defaults to 42.
+        """
         super(DropOutPerturbation, self).__init__()
         # self.dropout = (
         #    nn.Dropout2d(p=drop_rate) if spatial_dropout else nn.Dropout(drop_rate)
@@ -17,6 +25,7 @@ class DropOutPerturbation(nn.Module):
         self.dropout =(
             Dropout2dFixedProportion(proportion=drop_rate, random_seed=random_seed) if spatial_dropout else Dropout(drop_rate, random_seed)
         )
+        self.layers = layers
 
     def forward(self, x):
         x = self.dropout(x)
@@ -24,11 +33,12 @@ class DropOutPerturbation(nn.Module):
 
 
 class FeatureDropPerturbation(nn.Module):
-    def __init__(self, th_lower=0.7, th_upper=0.9, random_seed=42, **kwargs):
+    def __init__(self, th_lower=0.7, th_upper=0.9, layers = [0], random_seed=42, **kwargs):
         super(FeatureDropPerturbation, self).__init__()
         self.th_lower = th_lower
         self.th_upper = th_upper
         self.rng = np.random.default_rng(random_seed)
+        self.layers = layers
 
     def feature_dropout(self, x):
         attention = torch.mean(x, dim=1, keepdim=True)
@@ -44,11 +54,12 @@ class FeatureDropPerturbation(nn.Module):
 
 
 class FeatureNoisePerturbation(nn.Module):
-    def __init__(self, uniform_range=0.3, random_seed=42, **kwargs):
+    def __init__(self, uniform_range=0.3, layers=[0], random_seed=42, **kwargs):
         super(FeatureNoisePerturbation, self).__init__()
         # self.uni_dist = Uniform(-uniform_range, uniform_range)
         self.uni_range = uniform_range
         self.rng = torch.Generator().manual_seed(random_seed)
+        self.layers = layers
 
     def feature_based_noise(self, x):
         noise_vector = (

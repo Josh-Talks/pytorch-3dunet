@@ -107,14 +107,16 @@ class AbstractUNet(nn.Module):
         # !!remember: it's the 1st in the list
         encoders_features = encoders_features[1:]
 
-        if self.feature_perturbation is not None:
+        if (self.feature_perturbation is not None) and (0 in self.feature_perturbation.layers):
             x = self.feature_perturbation(x)
         # decoder part
         decoder_features = [x]
-        for decoder, encoder_features in zip(self.decoders, encoders_features):
+        for i, (decoder, encoder_features) in enumerate(zip(self.decoders, encoders_features)):
             # pass the output from the corresponding encoder and the output
             # of the previous decoder
             x = decoder(encoder_features, x)
+            if (self.feature_perturbation is not None) and ((i + 1) in self.feature_perturbation.layers):
+                x = self.feature_perturbation(x)
             # save the decoder outputs in the original order
             decoder_features.append(x)
 
