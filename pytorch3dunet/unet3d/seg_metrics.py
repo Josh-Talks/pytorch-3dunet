@@ -115,8 +115,9 @@ class AveragePrecision:
     https://www.kaggle.com/stkbailey/step-by-step-explanation-of-scoring-metric
     """
 
-    def __init__(self):
-        self.iou_range = np.linspace(0.50, 0.95, 10)
+    def __init__(self, iou_range=(0.50, 0.95, 10)):
+
+        self.iou_range = np.linspace(*iou_range)
 
     def __call__(self, input_seg, gt_seg):
         # compute contingency_table

@@ -355,14 +355,14 @@ class GenericAdaptedRandError(AdaptedRandError):
 
 class GenericAveragePrecision:
     def __init__(
-        self, min_instance_size=None, use_last_target=False, metric="ap", **kwargs
+        self, min_instance_size=None, use_last_target=False, metric="ap", iou_range=(0.5, 0.95, 10), **kwargs
     ):
         self.min_instance_size = min_instance_size
         self.use_last_target = use_last_target
         assert metric in ["ap", "acc"]
         if metric == "ap":
             # use AveragePrecision
-            self.metric = AveragePrecision()
+            self.metric = AveragePrecision(iou_range=iou_range)
         else:
             # use Accuracy at 0.5 IoU
             self.metric = Accuracy(iou_threshold=0.5)
@@ -441,10 +441,11 @@ class BlobsAveragePrecision(GenericAveragePrecision):
         metric="ap",
         min_instance_size=None,
         input_channel=0,
+        iou_range=(0.5, 0.95, 10),
         **kwargs,
     ):
         super().__init__(
-            min_instance_size=min_instance_size, use_last_target=True, metric=metric
+            min_instance_size=min_instance_size, use_last_target=True, metric=metric, iou_range=iou_range
         )
         if thresholds is None:
             thresholds = [0.4, 0.5, 0.6, 0.7, 0.8]
@@ -469,9 +470,9 @@ class BlobsBoundaryAveragePrecision(GenericAveragePrecision):
     Segmentation mask is computed as (P_mask - P_boundary) > th followed by a connected component
     """
 
-    def __init__(self, thresholds=None, metric="ap", min_instance_size=None, **kwargs):
+    def __init__(self, thresholds=None, metric="ap", min_instance_size=None, iou_range=(0.5, 0.95, 10), **kwargs):
         super().__init__(
-            min_instance_size=min_instance_size, use_last_target=True, metric=metric
+            min_instance_size=min_instance_size, use_last_target=True, metric=metric, iou_range=iou_range
         )
         if thresholds is None:
             thresholds = [0.3, 0.4, 0.5, 0.6, 0.7]
@@ -496,9 +497,9 @@ class BoundaryAveragePrecision(GenericAveragePrecision):
     """
 
     def __init__(
-        self, thresholds=None, min_instance_size=None, input_channel=0, **kwargs
+        self, thresholds=None, min_instance_size=None, input_channel=0, iou_range=(0.5, 0.95, 10), **kwargs
     ):
-        super().__init__(min_instance_size=min_instance_size, use_last_target=True)
+        super().__init__(min_instance_size=min_instance_size, use_last_target=True, iou_range=iou_range)
         if thresholds is None:
             thresholds = [0.3, 0.4, 0.5, 0.6]
         assert isinstance(thresholds, list)
@@ -523,8 +524,8 @@ class InstanceAveragePrecision(GenericAveragePrecision):
     Computes Average Precision given Instance segmentation prediction and ground truth instance segmentation.
     """
 
-    def __init__(self, min_instance_size=None, **kwargs):
-        super().__init__(min_instance_size=min_instance_size, use_last_target=False)
+    def __init__(self, min_instance_size=None, iou_range=(0.5, 0.95, 10), **kwargs):
+        super().__init__(min_instance_size=min_instance_size, use_last_target=False, iou_range=iou_range)
 
     def input_to_seg(self, input, target=None):
         return input
