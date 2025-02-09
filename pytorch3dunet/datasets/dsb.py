@@ -22,7 +22,7 @@ from pytorch3dunet.datasets.utils import (
     get_slice_builder,
     mirror_pad,
 )
-from pytorch3dunet.unet3d.utils import get_logger
+from pytorch3dunet.unet3d.utils import get_logger, remove_background_seg
 
 logger = get_logger("DSB2018Dataset")
 
@@ -945,6 +945,7 @@ class Abstract_TIF_Dataset(ConfigDataset):
         mask_key=None,
         prediction_channel=None,
         min_object_size=None,
+        instance_zero_background=False,
     ):
         assert os.path.isdir(image_dir), f"{image_dir} is not a directory"
         assert os.path.isdir(mask_dir), f"{mask_dir} is not a directory"
@@ -1000,6 +1001,7 @@ class Abstract_TIF_Dataset(ConfigDataset):
         
         self.min_obj_size = min_object_size
         self.image_key = image_key
+        self.instance_zero_background = instance_zero_background
 
     def __getitem__(self, idx):
         if idx >= len(self):
@@ -1010,6 +1012,8 @@ class Abstract_TIF_Dataset(ConfigDataset):
             img = skimage.morphology.remove_small_objects(
                 img, min_size=self.min_obj_size
             )
+        if (self.phase == "eval") and (self.instance_zero_background==True):
+            img = remove_background_seg(img)
         if self.phase != "test":
             mask = self.masks[idx]
             if self.min_obj_size is not None:
@@ -1059,6 +1063,7 @@ class Standard_TIF_Dataset(Abstract_TIF_Dataset):
         mask_key=None,
         prediction_channel=None,
         min_object_size=None,
+        instance_zero_background=False,
     ):
         super().__init__(
             image_dir=image_dir,
@@ -1072,6 +1077,7 @@ class Standard_TIF_Dataset(Abstract_TIF_Dataset):
             mask_key=mask_key,
             prediction_channel=prediction_channel,
             min_object_size=min_object_size,
+            instance_zero_background=instance_zero_background,
         )
 
     def _load_files(self, dir, expand_dims, key, prediction_channel=None):
@@ -1121,6 +1127,7 @@ class Standard_TIF_Dataset(Abstract_TIF_Dataset):
                 mask_key=dataset_config.get("mask_key", None),
                 prediction_channel=dataset_config.get("prediction_channel", None),
                 min_object_size=dataset_config.get("min_object_size", None),
+                instance_zero_background=dataset_config.get("instance_zero_background", False),
             )
         ]
 
@@ -1139,6 +1146,7 @@ class Hoechst_Dataset(Abstract_TIF_Dataset):
         mask_key=None,
         prediction_channel=None,
         min_object_size=None,
+        instance_zero_background=False,
     ):
         super().__init__(
             image_dir=image_dir,
@@ -1152,6 +1160,7 @@ class Hoechst_Dataset(Abstract_TIF_Dataset):
             mask_key=mask_key,
             prediction_channel=prediction_channel,
             min_object_size=min_object_size,
+            instance_zero_background=instance_zero_background,
         )
 
     def _load_files(self, dir, expand_dims, key, prediction_channel=None):
@@ -1202,6 +1211,7 @@ class Hoechst_Dataset(Abstract_TIF_Dataset):
                 mask_key=dataset_config.get("mask_key", None),
                 prediction_channel=dataset_config.get("prediction_channel", None),
                 min_object_size=dataset_config.get("min_object_size", None),
+                instance_zero_background=dataset_config.get("instance_zero_background", False),
             )
         ]
 
@@ -1220,6 +1230,7 @@ class HeLaNuc_Dataset(Abstract_TIF_Dataset):
         mask_key=None,
         prediction_channel=None,
         min_object_size=None,
+        instance_zero_background=False,
     ):
         super().__init__(
             image_dir=image_dir,
@@ -1233,6 +1244,7 @@ class HeLaNuc_Dataset(Abstract_TIF_Dataset):
             mask_key=mask_key,
             prediction_channel=prediction_channel,
             min_object_size=min_object_size,
+            instance_zero_background=instance_zero_background,
         )
 
     def _load_files(self, dir, expand_dims, key, prediction_channel=None):
@@ -1284,6 +1296,7 @@ class HeLaNuc_Dataset(Abstract_TIF_Dataset):
                 mask_key=dataset_config.get("mask_key", None),
                 prediction_channel=dataset_config.get("prediction_channel", None),
                 min_object_size=dataset_config.get("min_object_size", None),
+                instance_zero_background=dataset_config.get("instance_zero_background", False),
             )
         ]
 
@@ -1314,6 +1327,7 @@ class TIF_txt_Dataset(Abstract_TIF_Dataset):
         mask_key=None,
         prediction_channel=None,
         min_object_size=None,
+        instance_zero_background=False,
     ):
         super().__init__(
             image_dir=image_dir,
@@ -1328,6 +1342,7 @@ class TIF_txt_Dataset(Abstract_TIF_Dataset):
             mask_key=mask_key,
             prediction_channel=prediction_channel,
             min_object_size=min_object_size,
+            instance_zero_background=instance_zero_background,
         )
 
     def _load_files(self, dir, expand_dims, key, prediction_channel=None):
@@ -1378,5 +1393,6 @@ class TIF_txt_Dataset(Abstract_TIF_Dataset):
                 mask_key=dataset_config.get("mask_key", None),
                 prediction_channel=dataset_config.get("prediction_channel", None),
                 min_object_size=dataset_config.get("min_object_size", None),
+                instance_zero_background=dataset_config.get("instance_zero_background", False),
             )
         ]

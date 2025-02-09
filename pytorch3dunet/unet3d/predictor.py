@@ -16,7 +16,7 @@ from pytorch3dunet.augment.transforms import Relabel
 from pytorch3dunet.datasets.hdf5 import AbstractHDF5Dataset
 from pytorch3dunet.datasets.utils import SliceBuilder, remove_padding
 from pytorch3dunet.unet3d.model import UNet2D
-from pytorch3dunet.unet3d.utils import get_logger
+from pytorch3dunet.unet3d.utils import get_logger, calculate_extents, remove_background_seg
 
 # check plant-seg version if 1.8 try import as below
 import pkg_resources
@@ -493,8 +493,9 @@ def pmaps_to_IN_seg(pred, min_size):
         assert pred.ndim == 3, f"Expected 2D or 3D array, got {pred.ndim}D array"
     pred_wt = dt_watershed(pred, stacked=True, min_size=min_size)
     gasp_pred = gasp(pred, pred_wt, post_minsize=min_size)
-    gasp_pred = set_background_to_value(gasp_pred, 0)
-    gasp_pred = Relabel()(gasp_pred).squeeze()
+    gasp_pred = remove_background_seg(gasp_pred).squeeze()
+    #gasp_pred = set_background_to_value(gasp_pred, 0)
+    #gasp_pred = Relabel()(gasp_pred).squeeze()    
     return gasp_pred
 
 
