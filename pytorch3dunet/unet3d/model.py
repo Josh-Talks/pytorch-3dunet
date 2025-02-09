@@ -101,7 +101,7 @@ class AbstractUNet(nn.Module):
         for i, encoder in enumerate(self.encoders):
             x = encoder(x)
             # ensure symmetric dropout with decoder
-            if (self.feature_perturbation is not None) and ((len(self.encoders) - i) in self.feature_perturbation.layers):
+            if (self.feature_perturbation is not None) and (((len(self.encoders) - 1) - i) in self.feature_perturbation.layers):
                 x = self.feature_perturbation(x)
             # reverse the encoder outputs to be aligned with the decoder
             encoders_features.insert(0, x)
@@ -110,8 +110,6 @@ class AbstractUNet(nn.Module):
         # !!remember: it's the 1st in the list
         encoders_features = encoders_features[1:]
 
-        if (self.feature_perturbation is not None) and (0 in self.feature_perturbation.layers):
-            x = self.feature_perturbation(x)
         # decoder part
         decoder_features = [x]
         for j, (decoder, encoder_features) in enumerate(zip(self.decoders, encoders_features)):
