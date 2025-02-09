@@ -98,8 +98,11 @@ class AbstractUNet(nn.Module):
     def forward(self, x):
         # encoder part
         encoders_features = []
-        for encoder in self.encoders:
+        for i, encoder in enumerate(self.encoders):
             x = encoder(x)
+            # ensure symmetric dropout with decoder
+            if (self.feature_perturbation is not None) and ((len(self.encoders) - i) in self.feature_perturbation.layers):
+                x = self.feature_perturbation(x)
             # reverse the encoder outputs to be aligned with the decoder
             encoders_features.insert(0, x)
 
@@ -111,11 +114,11 @@ class AbstractUNet(nn.Module):
             x = self.feature_perturbation(x)
         # decoder part
         decoder_features = [x]
-        for i, (decoder, encoder_features) in enumerate(zip(self.decoders, encoders_features)):
+        for j, (decoder, encoder_features) in enumerate(zip(self.decoders, encoders_features)):
             # pass the output from the corresponding encoder and the output
             # of the previous decoder
             x = decoder(encoder_features, x)
-            if (self.feature_perturbation is not None) and ((i + 1) in self.feature_perturbation.layers):
+            if (self.feature_perturbation is not None) and ((j + 1) in self.feature_perturbation.layers):
                 x = self.feature_perturbation(x)
             # save the decoder outputs in the original order
             decoder_features.append(x)
