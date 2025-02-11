@@ -1,9 +1,11 @@
 import argparse
 import os
 import shutil
+from typing import List, Dict
 
 import torch
 import yaml
+from pathlib import Path
 
 from pytorch3dunet.unet3d import utils
 
@@ -94,3 +96,42 @@ def copy_config(config, config_path):
 
 def _load_config_yaml(config_file):
     return yaml.safe_load(open(config_file, 'r'))
+
+# Custom representer to convert tuples to lists
+def tuple_representer(dumper, data):
+    return dumper.represent_sequence(
+        "tag:yaml.org,2002:seq", list(data), flow_style=True
+    )
+
+
+class NoAliasDumper(yaml.SafeDumper):
+    def ignore_aliases(self, data):
+        return True
+
+def save_yaml(
+    yaml_order: List[Dict[str, dict]], yaml_path: Path, overwrite: bool = False
+) -> None:
+    # check yaml file of same name doesn't exist in location
+    if yaml_path.exists():
+        if overwrite:
+            print(f"Overwriting yaml file at {yaml_path}")
+            # delete existing yaml file
+            yaml_path.unlink()
+        else:
+            # if exists print warning and skip saving yaml file
+            print(f"Yaml file {yaml_path} already exists, skipping save")
+            return
+
+    print(f"Saving yaml file to {yaml_path}")
+    with open(yaml_path, "w") as yaml_file:
+        yaml.add_representer(tuple, tuple_representer, Dumper=NoAliasDumper)
+        for yaml_dict in yaml_order:
+            yaml_file.write(
+                yaml.dump(
+                    yaml_dict,
+                    default_flow_style=False,
+                    sort_keys=False,
+                    Dumper=NoAliasDumper,
+                )
+            )
+            yaml_file.write("\n")
