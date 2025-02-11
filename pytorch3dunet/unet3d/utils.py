@@ -439,6 +439,7 @@ def calculate_extents(lbl, func=np.median):
 
 
 def remove_background_seg(img, threshold_multiplier=4):
+    img += 1  # Add 1 to the image to avoid 0 as an instance index
     instances, counts = np.unique(img, return_counts=True)
     median_size = np.median(counts)
     while np.max(counts) > threshold_multiplier * median_size:
