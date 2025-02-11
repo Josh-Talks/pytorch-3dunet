@@ -384,6 +384,8 @@ class NucleiInstancePredictor(_AbstractPredictor):
         save_segmentation=True,
         prediction_channel=None,
         min_size=25,
+        zero_largest_instance=False,
+        no_adjust_background=False,
         **kwargs,
     ):
         super().__init__(
@@ -395,6 +397,8 @@ class NucleiInstancePredictor(_AbstractPredictor):
         )
         self.save_segmentation = save_segmentation
         self.min_size = min_size
+        self.zero_largest_instance = zero_largest_instance
+        self.no_adjust_background = no_adjust_background
 
     def _slice_from_pad(self, pad):
         if pad == 0:
@@ -431,7 +435,13 @@ class NucleiInstancePredictor(_AbstractPredictor):
                     ]
 
                 nuclei_IN_save_batch(
-                    self.output_dir, path, pred, self.save_segmentation, self.min_size
+                    self.output_dir, 
+                    path, 
+                    pred, 
+                    self.save_segmentation, 
+                    self.min_size, 
+                    self.zero_largest_instance,
+                    self.no_adjust_background
                 )
 
 
@@ -461,7 +471,13 @@ def dsb_save_batch(output_dir, path, pred, save_segmentation=True, pmaps_thersho
 
 
 def nuclei_IN_save_batch(
-    output_dir, path, pred, save_segmentation=True, min_size: int = 25
+    output_dir, 
+    path, 
+    pred, 
+    save_segmentation=True, 
+    min_size: int = 25, 
+    zero_largest_instance=False,
+    no_adjust_background=False
 ):
 
     # convert to numpy array
@@ -481,21 +497,31 @@ def nuclei_IN_save_batch(
             if save_segmentation:
                 f.create_dataset(
                     "segmentation",
-                    data=pmaps_to_IN_seg(single_pred, min_size),
+                    data=pmaps_to_IN_seg(
+                        single_pred, 
+                        min_size, 
+                        zero_largest_instance=zero_largest_instance,
+                        no_adjust_background=no_adjust_background
+                    ),
                     compression="gzip",
                 )
 
 
-def pmaps_to_IN_seg(pred, min_size):
+def pmaps_to_IN_seg(pred, min_size, zero_largest_instance=False, no_adjust_background=False):
     if pred.ndim == 2:
         pred = np.expand_dims(pred, axis=0)
     else:
         assert pred.ndim == 3, f"Expected 2D or 3D array, got {pred.ndim}D array"
     pred_wt = dt_watershed(pred, stacked=True, min_size=min_size)
     gasp_pred = gasp(pred, pred_wt, post_minsize=min_size)
-    gasp_pred = remove_background_seg(gasp_pred).squeeze()
-    #gasp_pred = set_background_to_value(gasp_pred, 0)
-    #gasp_pred = Relabel()(gasp_pred).squeeze()    
+    if zero_largest_instance:
+        gasp_pred = set_background_to_value(gasp_pred, 0)
+        gasp_pred = Relabel()(gasp_pred).squeeze()
+    elif no_adjust_background:
+        gasp_pred = Relabel()(gasp_pred).squeeze()
+    else:    
+        gasp_pred = remove_background_seg(gasp_pred).squeeze()
+    
     return gasp_pred
 
 
@@ -520,6 +546,8 @@ class PatchWisePredictor(_AbstractPredictor):
         save_suffix: str = "_predictions",
         output_file_name: Optional[str] = None,
         log_images: bool = False,
+        zero_largest_instance: bool = False,
+        no_adjust_background: bool = False,
         **kwargs,
     ):
         super().__init__(
@@ -535,6 +563,8 @@ class PatchWisePredictor(_AbstractPredictor):
             **kwargs,
         )
         self.min_size = min_size
+        self.zero_largest_instance = zero_largest_instance
+        self.no_adjust_background = no_adjust_background
 
     def __call__(self, test_loader):
         # assert isinstance(test_loader.dataset, AbstractHDF5Dataset)
@@ -643,7 +673,12 @@ class PatchWisePredictor(_AbstractPredictor):
                         )
                         pred = np.expand_dims(pred, axis=0)
                         if self.save_segmentation:
-                            segm = pmaps_to_IN_seg(pred.squeeze(), self.min_size)
+                            segm = pmaps_to_IN_seg(
+                                pred.squeeze(), 
+                                self.min_size,
+                                zero_largest_instance=self.zero_largest_instance,
+                                no_adjust_background=self.no_adjust_background
+                            )
                             segm = np.expand_dims(segm, axis=(0, 1, 2))
                             segmentation_map[*index] = segm
 
