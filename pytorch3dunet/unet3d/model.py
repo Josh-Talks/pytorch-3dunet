@@ -247,6 +247,10 @@ class UNet2D(AbstractUNet):
                                      feature_perturbation=feature_perturbation
                                      )
         
+class UNet2d_as3d(UNet2D):
+    def forward(self, x):
+        x = x.squeeze(2)
+        return super().forward(x).unsqueeze(2)
 
 
 class ResidualUNet2D(AbstractUNet):
