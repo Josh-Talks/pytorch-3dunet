@@ -272,6 +272,41 @@ def get_test_loaders(config):
         yield DataLoader(test_dataset, batch_size=batch_size, num_workers=num_workers, pin_memory=True,
                          collate_fn=collate_fn)
 
+def get_val_loader(loaders_config):
+    """
+    Returns dictionary containing the validation loaders (torch.utils.data.DataLoader).
+
+    :param config: a top level configuration object containing the 'loaders' key
+    :return: val_loader
+    """
+
+    # get dataset class
+    dataset_cls_str = loaders_config.get("dataset", None)
+    if dataset_cls_str is None:
+        dataset_cls_str = "StandardHDF5Dataset"
+        logger.warning(
+            f"Cannot find dataset class in the config. Using default '{dataset_cls_str}'."
+        )
+    dataset_class = _loader_classes(dataset_cls_str)
+
+    # assert set(loaders_config['train']['file_paths']).isdisjoint(loaders_config['val']['file_paths']), \
+    #    "Train and validation 'file_paths' overlap. One cannot use validation data for training!"
+
+    val_datasets = dataset_class.create_datasets(loaders_config, phase="val")
+
+    num_workers = loaders_config.get("num_workers", 1)
+    logger.info(f"Number of workers for val dataloader: {num_workers}")
+    batch_size = loaders_config.get("batch_size", 1)
+
+    logger.info(f"Batch size for val loader: {batch_size}")
+    # when training with volumetric data use batch_size of 1 due to GPU memory constraints
+    return [DataLoader(
+        ConcatDataset(val_datasets),
+        batch_size=batch_size,
+        shuffle=False,
+        pin_memory=True,
+        num_workers=num_workers,
+    )]
 
 def default_prediction_collate(batch):
     """
