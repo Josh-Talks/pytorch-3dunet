@@ -5,11 +5,14 @@ import os
 import glob
 from abc import abstractmethod
 
+import h5py
 import imageio.v2 as imageio
 import numpy as np
-import torch
-import h5py
+from pathlib import Path
 import skimage
+import torch
+from typing import Union, Optional, List
+
 
 from pytorch3dunet.augment import transforms
 from pytorch3dunet.datasets.hdf5 import _create_padded_indexes
@@ -686,15 +689,16 @@ class S_BIAD1410_Dataset(ConfigDataset):
 
     def __init__(
         self,
-        img_path,
-        mask_path,
-        roi,
-        phase,
+        img_path: str,
+        mask_path:str,
+        roi:Optional[List[List[int]]],
+        phase:str,
         transformer_config,
         slice_builder_config=None,
         global_normalization=True,
         global_percentiles=None,
-        image_key="predictions",
+        image_key: Optional[str] = "predictions",
+        mask_key: Optional[str] = None,
     ):
         assert phase in ["train", "val", "test", "eval"]
 
@@ -708,16 +712,7 @@ class S_BIAD1410_Dataset(ConfigDataset):
 
         if global_normalization:
             logger.info("Calculating mean and std of the raw data...")
-            if self.file_path.endswith((".h5", ".hdf5")):
-                with h5py.File(self.file_path, "r") as f:
-                    if self.roi is not None:
-                        self.raw = f[image_key][self.roi]
-                    else:
-                        self.raw = f[image_key][:]
-            elif self.file_path.endswith(".tif"):
-                self.raw = imageio.volread(self.file_path)
-                if self.roi is not None:
-                    self.raw = self.raw[self.roi]
+            self.raw = self.load_data(self.file_path, image_key)
             if global_percentiles is not None:
                 stats = calculate_stats(
                     self.raw,
@@ -728,16 +723,7 @@ class S_BIAD1410_Dataset(ConfigDataset):
                 stats = calculate_stats(self.raw)
         else:
             stats = calculate_stats(None, True)
-            if self.file_path.endswith((".h5", ".hdf5")):
-                with h5py.File(self.file_path, "r") as f:
-                    if self.roi is not None:
-                        self.raw = f[image_key][self.roi]
-                    else:
-                        self.raw = f[image_key][:]
-            elif self.file_path.endswith(".tif"):
-                self.raw = imageio.volread(self.file_path)
-                if self.roi is not None:
-                    self.raw = self.raw[self.roi]
+            self.raw = self.load_data(self.file_path, image_key)
 
         self.transformer = transforms.Transformer(transformer_config, stats)
         self.raw_transform = self.transformer.raw_transform()
@@ -745,10 +731,8 @@ class S_BIAD1410_Dataset(ConfigDataset):
         if phase != "test":
             # create label/weight transform only in train/val phase
             self.label_transform = self.transformer.label_transform()
-            self.label = imageio.volread(self.label_file_path)
+            self.label = self.load_data(self.label_file_path, mask_key)
             self._check_volume_sizes()
-            if self.roi is not None:
-                self.label = self.label[self.roi]
             if phase == "eval":
                 with h5py.File(self.file_path, "r") as f:
                     self.patch_indexes = f["patch_index"][:]
@@ -796,6 +780,19 @@ class S_BIAD1410_Dataset(ConfigDataset):
         if self._raw_padded is None:
             self._raw_padded = mirror_pad(self.raw, self.halo_shape)
         return self._raw_padded[idx]
+    
+    def load_data(self, path: Union[str, Path], key:Optional[str]):
+        if path.endswith((".h5", ".hdf5")):
+            with h5py.File(path, "r") as f:
+                if self.roi is not None:
+                    raw = f[key][self.roi]
+                else:
+                    raw = f[key][:]
+        elif path.endswith(".tif"):
+            raw = imageio.volread(path)
+            if self.roi is not None:
+                raw = self.raw[self.roi]
+        return raw
 
     def volume_shape(self):
         raw = imageio.volread(self.file_path)
@@ -810,7 +807,11 @@ class S_BIAD1410_Dataset(ConfigDataset):
 
         if self.phase == "eval":
             raw_patch_transformed = self.raw_transform(self.get_raw_patch(idx))
-            label_idx = get_roi_slice(self.patch_indexes[idx])
+            if self.label.shape == self.raw.shape:
+                # if the label shape is equal to the raw shape, use the same index
+                label_idx = idx
+            else:
+                label_idx = get_roi_slice(self.patch_indexes[idx])
             label_patch_transformed = self.label_transform(
                 self.get_label_patch(label_idx)
             )
@@ -920,6 +921,7 @@ class S_BIAD1410_Dataset(ConfigDataset):
                     ),
                     global_percentiles=dataset_config.get("global_percentiles", None),
                     image_key=dataset_config.get("image_key", "predictions"),
+                    mask_key=dataset_config.get("mask_key", None),
                 )
                 datasets.append(dataset)
             except Exception:
