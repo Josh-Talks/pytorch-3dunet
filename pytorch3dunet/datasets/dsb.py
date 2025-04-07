@@ -808,7 +808,8 @@ class S_BIAD1410_Dataset(ConfigDataset):
         if self.phase == "eval":
             raw_patch_transformed = self.raw_transform(self.get_raw_patch(idx))
             if self.label.shape == self.raw.shape:
-                # if the label shape is equal to the raw shape, use the same index
+                # if the label shape is equal to the raw shape, then  should be a patchwise evaluation
+                # and can use direct patch index
                 label_idx = idx
             else:
                 label_idx = get_roi_slice(self.patch_indexes[idx])
