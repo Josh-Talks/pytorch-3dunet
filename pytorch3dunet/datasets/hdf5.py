@@ -76,6 +76,7 @@ class AbstractHDF5Dataset(ConfigDataset):
                     )
                 else:
                     stats = calculate_stats(raw)
+                print(f'Global mean: {stats['mean']}, global std: {stats['std']}')
         else:
             stats = calculate_stats(None, True)
 
