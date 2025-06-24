@@ -14,7 +14,7 @@ from collections.abc import Iterable
 from pytorch3dunet.augment.transforms import Relabel
 
 
-def save_checkpoint(state, is_best, checkpoint_dir):
+def save_checkpoint(state, is_best, checkpoint_dir, checkpoint_name=None):
     """Saves model and training parameters at '{checkpoint_dir}/last_checkpoint.pytorch'.
     If is_best==True saves '{checkpoint_dir}/best_checkpoint.pytorch' as well.
 
@@ -23,6 +23,7 @@ def save_checkpoint(state, is_best, checkpoint_dir):
             and best evaluation metric value so far
         is_best (bool): if True state contains the best model seen so far
         checkpoint_dir (string): directory where the checkpoint are to be saved
+        kth_checkpoint_name (Optional[string]): if not None, saves the checkpoint with this name
     """
 
     if not os.path.exists(checkpoint_dir):
@@ -33,6 +34,9 @@ def save_checkpoint(state, is_best, checkpoint_dir):
     if is_best:
         best_file_path = os.path.join(checkpoint_dir, "best_checkpoint.pytorch")
         shutil.copyfile(last_file_path, best_file_path)
+    if checkpoint_name is not None:
+        ckpt_file_path = os.path.join(checkpoint_dir, f"{checkpoint_name}.pytorch")
+        shutil.copyfile(last_file_path, ckpt_file_path)
 
 
 def load_checkpoint(

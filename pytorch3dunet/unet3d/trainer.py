@@ -94,7 +94,7 @@ class UNetTrainer:
                  max_num_epochs, max_num_iterations, validate_after_iters_initial=50, validate_after_iters_final=500,
                  validate_switch_iteration=750, log_after_iters=100, validate_iters=None, num_iterations=1, num_epoch=0, 
                  eval_score_higher_is_better=True, tensorboard_formatter=None, skip_train_validation=False, resume=None, 
-                 pre_trained=None, timer=False, log_train_images=False, **kwargs):
+                 pre_trained=None, timer=False, log_train_images=False, save_kth_epoch_ckpt=None, **kwargs):
 
         self.model = model
         self.optimizer = optimizer
@@ -113,6 +113,7 @@ class UNetTrainer:
         self.eval_score_higher_is_better = eval_score_higher_is_better
         self.timer = timer
         self.log_train_images = log_train_images
+        self.save_kth_epoch_ckpt = save_kth_epoch_ckpt
 
         logger.info(model)
         logger.info(f'eval_score_higher_is_better: {eval_score_higher_is_better}')
@@ -259,8 +260,14 @@ class UNetTrainer:
                 # remember best validation metric
                 is_best = self._is_best_eval_score(eval_score)
 
+                if self.save_kth_epoch_ckpt is not None:
+                    if self.num_epochs % self.save_kth_epoch_ckpt == 0:
+                        kth_ckpt_name = f"epoch_{self.num_epochs}.pytorch"
+                    else:
+                        kth_ckpt_name = None
+
                 # save checkpoint
-                self._save_checkpoint(is_best)
+                self._save_checkpoint(is_best, kth_ckpt_name=kth_ckpt_name)
 
             if self.num_iterations % self.log_after_iters == 0:
                 # compute eval criterion
@@ -440,7 +447,7 @@ class UNetTrainer:
 
         return is_best
 
-    def _save_checkpoint(self, is_best):
+    def _save_checkpoint(self, is_best, kth_ckpt_name=None):
         # remove `module` prefix from layer names when using `nn.DataParallel`
         # see: https://discuss.pytorch.org/t/solved-keyerror-unexpected-key-module-encoder-embedding-weight-in-state-dict/1686/20
         if isinstance(self.model, nn.DataParallel):
@@ -457,7 +464,7 @@ class UNetTrainer:
             'model_state_dict': state_dict,
             'best_eval_score': self.best_eval_score,
             'optimizer_state_dict': self.optimizer.state_dict(),
-        }, is_best, checkpoint_dir=self.checkpoint_dir)
+        }, is_best, checkpoint_dir=self.checkpoint_dir, checkpoint_name=kth_ckpt_name)
 
     def _log_lr(self):
         lr = self.optimizer.param_groups[0]['lr']
