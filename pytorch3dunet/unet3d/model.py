@@ -277,7 +277,7 @@ class ResidualUNet2D(AbstractUNet):
                                              is3d=False)
 
 
-def get_model(model_config):
+def get_model(model_config) -> nn.Module:
     model_class = get_class(model_config['name'], modules=[
         'pytorch3dunet.unet3d.model'
     ])
