@@ -218,15 +218,26 @@ def get_train_loaders(config):
             f'{torch.cuda.device_count()} GPUs available. Using batch_size = {torch.cuda.device_count()} * {batch_size}')
         batch_size = batch_size * torch.cuda.device_count()
 
-    logger.info(f'Batch size for train/val loader: {batch_size}')
+    logger.info(f'Batch size for train loader: {batch_size}')
+    logger.info(f'Batch size for val loader: {batch_size_val}')
     # when training with volumetric data use batch_size of 1 due to GPU memory constraints
-    return {
-        'train': DataLoader(ConcatDataset(train_datasets), batch_size=batch_size, shuffle=True, pin_memory=True,
-                            num_workers=num_workers),
-        # don't shuffle during validation: useful when showing how predictions for a given batch get better over time
-        'val': DataLoader(ConcatDataset(val_datasets), batch_size=batch_size_val, shuffle=False, pin_memory=True,
+    train_loader = DataLoader(ConcatDataset(train_datasets), batch_size=batch_size, pin_memory=True,
+                            num_workers=num_workers)
+    train_loader.shuffle = True
+    val_loader = DataLoader(ConcatDataset(val_datasets), batch_size=batch_size_val, pin_memory=True,
                           num_workers=num_workers)
+    val_loader.shuffle = False
+    return {
+        'train': train_loader,
+        'val': val_loader
     }
+    # return {
+    #     'train': DataLoader(ConcatDataset(train_datasets), batch_size=batch_size, shuffle=True, pin_memory=True,
+    #                         num_workers=num_workers),
+    #     # don't shuffle during validation: useful when showing how predictions for a given batch get better over time
+    #     'val': DataLoader(ConcatDataset(val_datasets), batch_size=batch_size_val, shuffle=False, pin_memory=True,
+    #                       num_workers=num_workers)
+    # }
 
 
 def get_test_loaders(config):
