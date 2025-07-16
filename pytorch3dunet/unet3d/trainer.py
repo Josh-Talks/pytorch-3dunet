@@ -152,7 +152,7 @@ class UNetTrainer:
         elif pre_trained is not None:
             logger.info(f"Logging pre-trained model from '{pre_trained}'...")
             utils.load_checkpoint(pre_trained, self.model, None)
-            if 'checkpoint_dir' not in kwargs:
+            if ('checkpoint_dir' not in kwargs) and (self.checkpoint_dir is None):
                 self.checkpoint_dir = os.path.split(pre_trained)[0]
 
     def fit(self):
@@ -260,14 +260,8 @@ class UNetTrainer:
                 # remember best validation metric
                 is_best = self._is_best_eval_score(eval_score)
 
-                if self.save_kth_epoch_ckpt is not None:
-                    if self.num_epochs % self.save_kth_epoch_ckpt == 0:
-                        kth_ckpt_name = f"epoch_{self.num_epochs}.pytorch"
-                    else:
-                        kth_ckpt_name = None
-
                 # save checkpoint
-                self._save_checkpoint(is_best, kth_ckpt_name=kth_ckpt_name)
+                self._save_checkpoint(is_best)
 
             if self.num_iterations % self.log_after_iters == 0:
                 # compute eval criterion
@@ -283,7 +277,10 @@ class UNetTrainer:
                     else:
                         act_output = output
                     eval_score = self.eval_criterion(act_output, target)
-                    train_eval_scores.update(eval_score.item(), self._batch_size(input))
+                    if isinstance(eval_score, float):
+                        train_eval_scores.update(eval_score, self._batch_size(input))
+                    else:
+                        train_eval_scores.update(eval_score.item(), self._batch_size(input))
 
                 # log stats, params and images
                 logger.info(
@@ -310,6 +307,14 @@ class UNetTrainer:
                     {"time_for_iteration": iter_end_time - iter_start_time},
                     step=self.num_iterations,
                 )
+        
+        if self.save_kth_epoch_ckpt is not None:
+            if (self.num_epochs + 1) % self.save_kth_epoch_ckpt == 0:
+                kth_ckpt_name = f"epoch-{self.num_epochs}.pytorch"
+            
+                is_best = self._is_best_eval_score(eval_score)
+                self._save_checkpoint(is_best, kth_ckpt_name=kth_ckpt_name)
+
 
         return False
 
@@ -374,7 +379,10 @@ class UNetTrainer:
                     #self._log_images(input, target, output, 'val_')
 
                 eval_score = self.eval_criterion(output, target)
-                val_scores.update(eval_score.item(), self._batch_size(input))
+                if isinstance(eval_score, float):
+                    val_scores.update(eval_score, self._batch_size(input))
+                else:
+                    val_scores.update(eval_score.item(), self._batch_size(input))
 
                 # debug code to check outputs
                 """

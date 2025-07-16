@@ -35,7 +35,7 @@ def save_checkpoint(state, is_best, checkpoint_dir, checkpoint_name=None):
         best_file_path = os.path.join(checkpoint_dir, "best_checkpoint.pytorch")
         shutil.copyfile(last_file_path, best_file_path)
     if checkpoint_name is not None:
-        ckpt_file_path = os.path.join(checkpoint_dir, f"{checkpoint_name}.pytorch")
+        ckpt_file_path = os.path.join(checkpoint_dir, checkpoint_name)
         shutil.copyfile(last_file_path, ckpt_file_path)
 
 
