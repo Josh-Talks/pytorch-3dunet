@@ -3,6 +3,12 @@
 .ipynb_checkpoints
 .vscode
 
+# SLURM files
+SLURM/*
+*.sh
+*.err
+*.out
+
 # Data files
 *.npz
 
