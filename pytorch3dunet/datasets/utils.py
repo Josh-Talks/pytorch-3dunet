@@ -357,6 +357,8 @@ def calculate_stats(
     if not skip:
         mean = np.mean(img)
         std = np.std(img)
+        min_val = np.min(img)
+        max_val = np.max(img)
         if percentile_min is not None:
             pmin = np.percentile(img, percentile_min)
         else:
@@ -367,7 +369,7 @@ def calculate_stats(
             pmax = None
 
     else:
-        pmin, pmax, mean, std = None, None, None, None
+        pmin, pmax, mean, std, min_val, max_val = None, None, None, None, None, None
     
 
     return {
@@ -375,6 +377,8 @@ def calculate_stats(
         'pmax': pmax,
         'mean': mean,
         'std': std,
+        'min_value': min_val,
+        'max_value': max_val,
         'percentile_min': percentile_min,
         'percentile_max': percentile_max,
     }
