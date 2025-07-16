@@ -51,7 +51,11 @@ class AbstractHDF5Dataset(ConfigDataset):
 
         self.phase = phase
         self.file_path = file_path
-        if roi is not None:
+        if (
+            roi is not None
+            and isinstance(roi, list)
+            and all(isinstance(sublist, list) and all(isinstance(i, int) for i in sublist) for sublist in roi)
+        ):
             self.roi = get_roi_slice(roi)
         else:
             self.roi = roi
