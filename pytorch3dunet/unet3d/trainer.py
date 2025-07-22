@@ -12,7 +12,7 @@ from datetime import datetime
 from pytorch3dunet.datasets.utils import get_train_loaders
 from pytorch3dunet.unet3d.losses import get_loss_criterion
 from pytorch3dunet.unet3d.metrics import get_evaluation_metric
-from pytorch3dunet.unet3d.model import get_model, UNet2D
+from pytorch3dunet.unet3d.model import get_model, UNet2D, ResidualUNet2D
 from pytorch3dunet.unet3d.utils import get_logger, get_tensorboard_formatter, create_optimizer, \
     create_lr_scheduler, get_number_of_learnable_parameters
 from . import utils
@@ -424,7 +424,7 @@ class UNetTrainer:
         return input, target, weight
 
     def _forward_pass(self, input, target, weight=None):
-        if isinstance(self.model, UNet2D):
+        if (isinstance(self.model, UNet2D)) or (isinstance(self.model, ResidualUNet2D)):
             # remove the singleton z-dimension from the input
             input = torch.squeeze(input, dim=-3)
             # forward pass
