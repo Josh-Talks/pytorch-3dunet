@@ -110,20 +110,32 @@ class AbstractHDF5Dataset(ConfigDataset):
                                f'In this case: patch shape and stride shape should be equal for optimal prediction '
                                f'performance, but found patch_shape: {patch_shape} and stride_shape: {stride_shape}!')
 
-        with h5py.File(file_path, 'r') as f:
-            if self.roi is not None:
-                raw = f[raw_internal_path][self.roi]
-                label = f[label_internal_path][self.roi] if phase != 'test' else None
-                weight_map = f[weight_internal_path][self.roi] if weight_internal_path is not None else None
-            else:
-                raw = f[raw_internal_path]
-                label = f[label_internal_path] if phase != 'test' else None
-                weight_map = f[weight_internal_path] if weight_internal_path is not None else None
-            # build slice indices for raw and label data sets
-            slice_builder = get_slice_builder(raw, label, weight_map, slice_builder_config)
-            self.raw_slices = slice_builder.raw_slices
-            self.label_slices = slice_builder.label_slices
-            self.weight_slices = slice_builder.weight_slices
+        # Create lazy wrappers that provide shape info without loading data
+        raw_wrapper = LazyDatasetWrapper(file_path, raw_internal_path, self.roi)
+        label_wrapper = LazyDatasetWrapper(file_path, label_internal_path, self.roi) if phase != 'test' else None
+        weight_wrapper = LazyDatasetWrapper(file_path, weight_internal_path, self.roi) if weight_internal_path is not None else None
+        
+        # Build slice indices - SliceBuilder only uses .shape and .ndim (lazy)
+        # FilterSliceBuilder will call __getitem__ when needed (loads data on-demand)
+        slice_builder = get_slice_builder(raw_wrapper, label_wrapper, weight_wrapper, slice_builder_config)
+        self.raw_slices = slice_builder.raw_slices
+        self.label_slices = slice_builder.label_slices
+        self.weight_slices = slice_builder.weight_slices
+
+        # with h5py.File(file_path, 'r') as f:
+        #     if self.roi is not None:
+        #         raw = f[raw_internal_path][self.roi]
+        #         label = f[label_internal_path][self.roi] if phase != 'test' else None
+        #         weight_map = f[weight_internal_path][self.roi] if weight_internal_path is not None else None
+        #     else:
+        #         raw = f[raw_internal_path]
+        #         label = f[label_internal_path] if phase != 'test' else None
+        #         weight_map = f[weight_internal_path] if weight_internal_path is not None else None
+        #     # build slice indices for raw and label data sets
+        #     slice_builder = get_slice_builder(raw, label, weight_map, slice_builder_config)
+        #     self.raw_slices = slice_builder.raw_slices
+        #     self.label_slices = slice_builder.label_slices
+        #     self.weight_slices = slice_builder.weight_slices
 
         self.patch_count = len(self.raw_slices)
         logger.info(f'Number of patches: {self.patch_count}')
@@ -237,6 +249,52 @@ class AbstractHDF5Dataset(ConfigDataset):
             except Exception:
                 logger.error(f'Skipping {phase} set: {file_path}', exc_info=True)
         return datasets
+
+
+class LazyDatasetWrapper:
+    """Provides shape info without loading data, but allows data access when needed"""
+    def __init__(self, file_path, internal_path, roi=None):
+        self.file_path = file_path
+        self.internal_path = internal_path
+        self.roi = roi
+        self._shape = None
+        self._ndim = None
+    
+    @property
+    def shape(self):
+        if self._shape is None:
+            with h5py.File(self.file_path, 'r') as f:
+                dataset = f[self.internal_path]
+                if self.roi is not None:
+                    if isinstance(self.roi, tuple) and all(isinstance(r, slice) for r in self.roi):
+                        # Calculate shape for slice-based ROI
+                        self._shape = tuple(
+                            len(range(*slice_obj.indices(dim_size))) if slice_obj != slice(None) else dim_size
+                            for slice_obj, dim_size in zip(self.roi, dataset.shape)
+                        )
+                    elif isinstance(self.roi, (list, tuple)):
+                        # Handle index-based ROI (first dimension)
+                        self._shape = (len(self.roi),) + dataset.shape[1:]
+                else:
+                    self._shape = dataset.shape
+        return self._shape
+    
+    @property
+    def ndim(self):
+        if self._ndim is None:
+            self._ndim = len(self.shape)
+        return self._ndim
+    
+    def __getitem__(self, idx):
+        """Load actual data when accessed - used by FilterSliceBuilder"""
+        with h5py.File(self.file_path, 'r') as f:
+            if self.roi is not None:
+                if isinstance(self.roi, tuple) and all(isinstance(r, slice) for r in self.roi):
+                    return f[self.internal_path][self.roi][idx]
+                else:
+                    return f[self.internal_path][self.roi][idx]
+            else:
+                return f[self.internal_path][idx]
 
 
 class StandardHDF5Dataset(AbstractHDF5Dataset):
