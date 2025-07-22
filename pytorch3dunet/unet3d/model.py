@@ -260,7 +260,8 @@ class ResidualUNet2D(AbstractUNet):
 
     def __init__(self, in_channels, out_channels, final_sigmoid=True, f_maps=64, layer_order='gcr',
                  num_groups=8, num_levels=5, is_segmentation=True, conv_padding=1,
-                 conv_upscale=2, upsample='default', dropout_prob=0.1, **kwargs):
+                 conv_upscale=2, upsample='default', dropout_prob=0.1, feature_return=False,
+                 feature_perturbation=None, **kwargs):
         super(ResidualUNet2D, self).__init__(in_channels=in_channels,
                                              out_channels=out_channels,
                                              final_sigmoid=final_sigmoid,
@@ -274,7 +275,10 @@ class ResidualUNet2D(AbstractUNet):
                                              conv_upscale=conv_upscale,
                                              upsample=upsample,
                                              dropout_prob=dropout_prob,
-                                             is3d=False)
+                                             is3d=False,
+                                             feature_return=feature_return,
+                                             feature_perturbation=feature_perturbation
+                                            )
 
 
 def get_model(model_config) -> nn.Module:
