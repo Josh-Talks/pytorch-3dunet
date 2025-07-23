@@ -15,7 +15,7 @@ from PIL import Image as im
 from pytorch3dunet.augment.transforms import Relabel
 from pytorch3dunet.datasets.hdf5 import AbstractHDF5Dataset
 from pytorch3dunet.datasets.utils import SliceBuilder, remove_padding
-from pytorch3dunet.unet3d.model import UNet2D
+from pytorch3dunet.unet3d.model import UNet2D, ResidualUNet2D
 from pytorch3dunet.unet3d.utils import get_logger, calculate_extents, remove_background_seg
 
 # check plant-seg version if 1.8 try import as below
@@ -54,7 +54,7 @@ def _get_output_file(dataset, suffix="_predictions", output_dir=None, file_name=
 def _is_2d_model(model):
     if isinstance(model, nn.DataParallel):
         model = model.module
-    return isinstance(model, UNet2D)
+    return (isinstance(model, UNet2D)) or (isinstance(model, ResidualUNet2D))
 
 
 class _AbstractPredictor:
