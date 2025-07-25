@@ -222,10 +222,12 @@ def get_train_loaders(config):
     logger.info(f'Batch size for val loader: {batch_size_val}')
     # when training with volumetric data use batch_size of 1 due to GPU memory constraints
     train_loader = DataLoader(ConcatDataset(train_datasets), batch_size=batch_size, pin_memory=True,
-                            num_workers=num_workers)
+                            num_workers=num_workers, shuffle=True)
+    ### Read only for purposes of integrating with torch_em code, does not actually change dataloader shuffle status
     train_loader.shuffle = True
     val_loader = DataLoader(ConcatDataset(val_datasets), batch_size=batch_size_val, pin_memory=True,
-                          num_workers=num_workers)
+                          num_workers=num_workers, shuffle=False)
+    ## Read only for purposes of integrating with torch_em code, does not actually change dataloader shuffle status
     val_loader.shuffle = False
     return {
         'train': train_loader,
