@@ -283,6 +283,7 @@ class ResidualUNet2D(AbstractUNet):
 
 def get_model(model_config) -> nn.Module:
     model_class = get_class(model_config['name'], modules=[
-        'pytorch3dunet.unet3d.model'
+        'pytorch3dunet.unet3d.model',
+        'model_ranking.models'
     ])
     return model_class(**model_config)
