@@ -18,7 +18,7 @@ class AbstractUNet(nn.Module):
             use the proper loss criterion during training (i.e. CrossEntropyLoss (multi-class)
             or BCEWithLogitsLoss (two-class) respectively)
         f_maps (int, tuple): number of feature maps at each level of the encoder; if it's an integer the number
-            of feature maps is given by the geometric progression: f_maps ^ k, k=1,2,3,4
+            of feature maps is given by the geometric progression: f_maps * 2^k, k=1,2,3,4
         final_sigmoid (bool): if True apply element-wise nn.Sigmoid after the final 1x1 convolution,
             otherwise apply nn.Softmax. In effect only if `self.training == False`, i.e. during validation/testing
         basic_module: basic model for the encoder/decoder (DoubleConv, ResNetBlock, ....)
@@ -279,6 +279,11 @@ class ResidualUNet2D(AbstractUNet):
                                              feature_return=feature_return,
                                              feature_perturbation=feature_perturbation
                                             )
+
+class ResidualUNet2D_as_3D(ResidualUNet2D):
+    def forward(self, x):
+        x = x.squeeze(2)
+        return super().forward(x).unsqueeze(2)
 
 
 def get_model(model_config) -> nn.Module:
