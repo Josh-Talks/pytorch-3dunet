@@ -612,6 +612,8 @@ class Standard_TIF_Dataset(Abstract_TIF_Dataset):
                         img = f[key][:]
                     if prediction_channel is not None:
                         img = img[prediction_channel]
+                else:
+                    continue
                 if expand_dims:
                     dims = img.ndim
                     img = np.expand_dims(img, axis=0)
