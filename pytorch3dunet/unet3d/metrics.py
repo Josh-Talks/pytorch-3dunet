@@ -355,10 +355,11 @@ class GenericAdaptedRandError(AdaptedRandError):
 
 class GenericAveragePrecision:
     def __init__(
-        self, min_instance_size=None, use_last_target=False, metric="ap", iou_range=(0.5, 0.95, 10), **kwargs
+        self, min_instance_size=None, use_last_target=False, metric="ap", iou_range=(0.5, 0.95, 10), mean_batch_score=False, **kwargs
     ):
         self.min_instance_size = min_instance_size
         self.use_last_target = use_last_target
+        self.mean_batch_score = mean_batch_score
         assert metric in ["ap", "acc"]
         if metric == "ap":
             # use AveragePrecision
@@ -409,7 +410,9 @@ class GenericAveragePrecision:
             batch_aps.append(np.max(segs_aps))
             i_batch += 1
 
-        return torch.tensor(batch_aps).mean()
+        if self.mean_batch_score:
+            return torch.tensor(batch_aps).mean()
+        return torch.tensor(batch_aps)
 
     def _filter_instances(self, input):
         """
