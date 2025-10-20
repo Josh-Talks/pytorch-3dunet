@@ -25,7 +25,7 @@ from pytorch3dunet.datasets.utils import (
     get_slice_builder,
     mirror_pad,
 )
-from pytorch3dunet.unet3d.utils import get_logger, remove_background_seg
+from pytorch3dunet.unet3d.utils import get_logger, set_large_instances_to_zero
 
 logger = get_logger("DSB2018Dataset")
 
@@ -531,7 +531,7 @@ class Abstract_TIF_Dataset(ConfigDataset):
                 img, min_size=self.min_obj_size
             )
         if (self.phase == "eval") and (self.instance_zero_background==True):
-            img = remove_background_seg(img)
+            img = zero_large_instances(img)
         if self.phase != "test":
             mask = self.masks[idx]
             if self.min_obj_size is not None:
