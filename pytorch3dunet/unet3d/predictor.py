@@ -16,7 +16,7 @@ from pytorch3dunet.augment.transforms import Relabel
 from pytorch3dunet.datasets.hdf5 import AbstractHDF5Dataset
 from pytorch3dunet.datasets.utils import SliceBuilder, remove_padding
 from pytorch3dunet.unet3d.model import UNet2D, ResidualUNet2D
-from pytorch3dunet.unet3d.utils import get_logger, calculate_extents, remove_background_seg
+from pytorch3dunet.unet3d.utils import get_logger, calculate_extents, set_large_instances_to_zero
 
 # check plant-seg version if 1.8 try import as below
 import pkg_resources
@@ -25,10 +25,10 @@ try:
     plantseg_version = pkg_resources.get_distribution("plantseg").version
     if plantseg_version < '2.0':
         from plantseg.segmentation import dt_watershed, gasp
-        from plantseg.dataprocessing import set_background_to_value
+        from plantseg.dataprocessing import set_biggest_instance_to_zero
     elif plantseg_version >= '2.0':
         from plantseg.functionals.segmentation import dt_watershed, gasp
-        from plantseg.functionals.dataprocessing import set_background_to_value
+        from plantseg.functionals.dataprocessing import set_biggest_instance_to_zero, relabel_segmentation
     else:
         raise ImportError("Unsupported plantseg version")
 except ImportError as e:
@@ -385,7 +385,10 @@ class NucleiInstancePredictor(_AbstractPredictor):
         prediction_channel=None,
         min_size=25,
         zero_largest_instance=False,
-        no_adjust_background=False,
+        zero_large_instances=False,
+        beta=0.5,
+        large_instance_multiplier=4,
+        threshold: float = 0.5,
         **kwargs,
     ):
         super().__init__(
@@ -398,7 +401,10 @@ class NucleiInstancePredictor(_AbstractPredictor):
         self.save_segmentation = save_segmentation
         self.min_size = min_size
         self.zero_largest_instance = zero_largest_instance
-        self.no_adjust_background = no_adjust_background
+        self.zero_large_instances = zero_large_instances
+        self.beta = beta
+        self.large_instance_multiplier = large_instance_multiplier
+        self.threshold = threshold
 
     def _slice_from_pad(self, pad):
         if pad == 0:
@@ -435,19 +441,22 @@ class NucleiInstancePredictor(_AbstractPredictor):
                     ]
 
                 nuclei_IN_save_batch(
-                    self.output_dir, 
-                    path, 
-                    pred, 
-                    self.save_segmentation, 
-                    self.min_size, 
-                    self.zero_largest_instance,
-                    self.no_adjust_background
+                    output_dir=self.output_dir,
+                    path=path,
+                    pred=pred,
+                    save_segmentation=self.save_segmentation,
+                    min_size=self.min_size,
+                    zero_largest_instance=self.zero_largest_instance,
+                    zero_large_instances=self.zero_large_instances,
+                    beta=self.beta,
+                    large_instance_multiplier=self.large_instance_multiplier,
+                    threshold=self.threshold
                 )
 
 
-def dsb_save_batch(output_dir, path, pred, save_segmentation=True, pmaps_thershold=0.5):
+def dsb_save_batch(output_dir, path, pred, save_segmentation=True, pmaps_threshold=0.5):
     def _pmaps_to_seg(pred):
-        mask = pred > pmaps_thershold
+        mask = pred > pmaps_threshold
         return measure.label(mask).astype("uint16")
 
     # convert to numpy array
@@ -477,7 +486,11 @@ def nuclei_IN_save_batch(
     save_segmentation=True, 
     min_size: int = 25, 
     zero_largest_instance=False,
-    no_adjust_background=False
+    zero_large_instances=False,
+    beta=0.5,
+    large_instance_multiplier=4,
+    max_obj_size=None,
+    threshold: float=0.5
 ):
 
     # convert to numpy array
@@ -501,26 +514,41 @@ def nuclei_IN_save_batch(
                         single_pred, 
                         min_size, 
                         zero_largest_instance=zero_largest_instance,
-                        no_adjust_background=no_adjust_background
+                        zero_large_instances=zero_large_instances,
+                        beta=beta,
+                        large_instance_multiplier=large_instance_multiplier,
+                        max_obj_size=max_obj_size,
+                        threshold=threshold
+
                     ),
                     compression="gzip",
                 )
 
 
-def pmaps_to_IN_seg(pred, min_size, zero_largest_instance=False, no_adjust_background=False):
+def pmaps_to_IN_seg(
+    pred, 
+    min_size,
+    zero_largest_instance=False, 
+    zero_large_instances=False, 
+    beta=0.5, 
+    large_instance_multiplier: float=4,
+    max_obj_size=None,
+    threshold: float=0.5
+):
     if pred.ndim == 2:
         pred = np.expand_dims(pred, axis=0)
     else:
         assert pred.ndim == 3, f"Expected 2D or 3D array, got {pred.ndim}D array"
-    pred_wt = dt_watershed(pred, stacked=True, min_size=min_size)
-    gasp_pred = gasp(pred, pred_wt, post_minsize=min_size)
+    pred_wt = dt_watershed(pred, stacked=True, min_size=min_size, threshold=threshold)
+    gasp_pred = gasp(pred, pred_wt, post_minsize=min_size, beta=beta)
     if zero_largest_instance:
-        gasp_pred = set_background_to_value(gasp_pred, 0)
-        gasp_pred = Relabel()(gasp_pred).squeeze()
-    elif no_adjust_background:
-        gasp_pred = Relabel()(gasp_pred).squeeze()
-    else:    
-        gasp_pred = remove_background_seg(gasp_pred).squeeze()
+        gasp_pred = set_biggest_instance_to_zero(gasp_pred, instance_could_be_zero=True)
+        gasp_pred = relabel_segmentation(gasp_pred).squeeze()
+    elif zero_large_instances:
+        gasp_pred = set_large_instances_to_zero(
+            gasp_pred, threshold_multiplier=large_instance_multiplier, max_obj_size=max_obj_size).squeeze()
+    else:
+        gasp_pred = relabel_segmentation(gasp_pred).squeeze()
     
     return gasp_pred
 
@@ -547,7 +575,11 @@ class PatchWisePredictor(_AbstractPredictor):
         output_file_name: Optional[str] = None,
         log_images: bool = False,
         zero_largest_instance: bool = False,
-        no_adjust_background: bool = False,
+        zero_large_instances: bool = False,
+        beta: float = 0.5,
+        large_instance_multiplier: int = 4,
+        max_obj_size: Optional[int] = None,
+        threshold: float = 0.5,
         **kwargs,
     ):
         super().__init__(
@@ -564,7 +596,11 @@ class PatchWisePredictor(_AbstractPredictor):
         )
         self.min_size = min_size
         self.zero_largest_instance = zero_largest_instance
-        self.no_adjust_background = no_adjust_background
+        self.zero_large_instances = zero_large_instances
+        self.beta = beta
+        self.large_instance_multiplier = large_instance_multiplier
+        self.max_obj_size = max_obj_size
+        self.threshold = threshold
 
     def __call__(self, test_loader):
         # assert isinstance(test_loader.dataset, AbstractHDF5Dataset)
@@ -677,7 +713,11 @@ class PatchWisePredictor(_AbstractPredictor):
                                 pred.squeeze(), 
                                 self.min_size,
                                 zero_largest_instance=self.zero_largest_instance,
-                                no_adjust_background=self.no_adjust_background
+                                zero_large_instances=self.zero_large_instances,
+                                beta=self.beta,
+                                large_instance_multiplier=self.large_instance_multiplier,
+                                max_obj_size=self.max_obj_size,
+                                threshold=self.threshold
                             )
                             segm = np.expand_dims(segm, axis=(0, 1, 2))
                             segmentation_map[*index] = segm
