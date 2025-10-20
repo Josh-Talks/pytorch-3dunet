@@ -3,6 +3,8 @@ import logging
 import os
 import shutil
 import sys
+from numpy.typing import NDArray
+from typing import Any, TypeGuard
 
 import h5py
 import numpy as np
@@ -12,6 +14,19 @@ from skimage.measure import regionprops
 from collections.abc import Iterable
 
 from pytorch3dunet.augment.transforms import Relabel
+import pkg_resources
+
+try:
+    plantseg_version = pkg_resources.get_distribution("plantseg").version
+    if plantseg_version < "2.0":
+        from plantseg.dataprocessing import relabel_segmentation
+    elif plantseg_version >= "2.0":
+        from plantseg.functionals.dataprocessing import relabel_segmentation
+    else:
+        raise ImportError("Unsupported plantseg version")
+except ImportError as e:
+    print(f"Error importing plantseg: {e}")
+    raise
 
 
 def save_checkpoint(state, is_best, checkpoint_dir, checkpoint_name=None):
@@ -442,11 +457,21 @@ def calculate_extents(lbl, func=np.median):
         return func(extents, axis=0)
 
 
-def remove_background_seg(img, threshold_multiplier=4):
+def is_ndarray(v: Any) -> TypeGuard[NDArray[Any]]:
+    return isinstance(v, np.ndarray)
+
+
+def set_large_instances_to_zero(
+    img, threshold_multiplier: float = 4, max_obj_size=None
+):
+    img = img.copy()  # Create a copy of the input image to avoid modifying the original
     img += 1  # Add 1 to the image to avoid 0 as an instance index
     instances, counts = np.unique(img, return_counts=True)
-    median_size = np.median(counts)
-    while np.max(counts) > threshold_multiplier * median_size:
+    if max_obj_size is not None:
+        size = max_obj_size
+    else:
+        size = np.median(counts)
+    while np.max(counts) > threshold_multiplier * size:
         bg_idx = instances[np.argmax(counts)]
         img = np.where(img == bg_idx, 0, img)
         counts[np.argmax(counts)] = 0  # Set the count of the background index to 0
@@ -455,11 +480,12 @@ def remove_background_seg(img, threshold_multiplier=4):
         instances = instances[instances != bg_idx]
         counts = counts[counts != 0]
 
-        if len(instances) == 1:
+        if len(instances) <= 1:
             break
     if img.ndim == 4:
-        img = Relabel()(img[0])
+        img = relabel_segmentation(img[0])
         img = np.expand_dims(img, axis=0)
     else:
-        img = Relabel()(img)
+        img = relabel_segmentation(img)
+    assert is_ndarray(img), "Expected img to be numpy ndarray"
     return img
