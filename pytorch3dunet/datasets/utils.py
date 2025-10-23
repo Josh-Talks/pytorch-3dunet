@@ -163,6 +163,99 @@ class FilterSliceBuilder(SliceBuilder):
         self._label_slices = list(label_slices)
 
 
+
+class SingleZSliceBuilder(SliceBuilder):
+    """
+    Custom SliceBuilder that ensures exactly one patch per Z slice,
+    centered in Y and X dimensions. Only returns patches where the patch_shape
+    fits within the dataset dimensions.
+    """
+    
+    def __init__(self, raw_dataset, label_dataset, weight_dataset, patch_shape, stride_shape, **kwargs):
+        # Store original parameters
+        self.patch_shape = tuple(patch_shape)
+        self.stride_shape = tuple(stride_shape)
+        
+        # Don't call parent __init__ - we'll build slices ourselves
+        skip_shape_check = kwargs.get('skip_shape_check', False)
+        if not skip_shape_check:
+            self._check_patch_shape(patch_shape)
+        
+        # Validate that patch fits in dataset dimensions
+        self._validate_patch_fits(raw_dataset, patch_shape)
+        
+        # Build custom slices
+        self._raw_slices = self._build_single_z_slices(raw_dataset, patch_shape, stride_shape)
+        
+        if label_dataset is None:
+            self._label_slices = None
+        else:
+            self._validate_patch_fits(label_dataset, patch_shape)
+            self._label_slices = self._build_single_z_slices(label_dataset, patch_shape, stride_shape)
+            assert len(self._raw_slices) == len(self._label_slices)
+            
+        if weight_dataset is None:
+            self._weight_slices = None
+        else:
+            self._validate_patch_fits(weight_dataset, patch_shape)
+            self._weight_slices = self._build_single_z_slices(weight_dataset, patch_shape, stride_shape)
+            assert len(self._raw_slices) == len(self._weight_slices)
+
+    def _validate_patch_fits(self, dataset, patch_shape):
+        """Validate that the patch_shape fits within the dataset dimensions"""
+        if dataset.ndim == 4:
+            _, i_z, i_y, i_x = dataset.shape
+        else:
+            i_z, i_y, i_x = dataset.shape
+        
+        k_z, k_y, k_x = patch_shape
+        
+        if i_z < k_z:
+            raise ValueError(f"Patch size Z dimension ({k_z}) is larger than dataset Z dimension ({i_z})")
+        if i_y < k_y:
+            raise ValueError(f"Patch size Y dimension ({k_y}) is larger than dataset Y dimension ({i_y})")
+        if i_x < k_x:
+            raise ValueError(f"Patch size X dimension ({k_x}) is larger than dataset X dimension ({i_x})")
+
+    def _build_single_z_slices(self, dataset, patch_shape, stride_shape):
+        """Build slices ensuring exactly one centered patch per Z slice"""
+        slices = []
+        
+        if dataset.ndim == 4:
+            in_channels, i_z, i_y, i_x = dataset.shape
+        else:
+            i_z, i_y, i_x = dataset.shape
+        
+        k_z, k_y, k_x = patch_shape
+        s_z, s_y, s_x = stride_shape
+        
+        # For Z dimension: use the original logic to get all Z positions
+        z_steps = list(self._gen_indices(i_z, k_z, s_z))
+        
+        # For Y and X dimensions: Use centered positions only
+        # Calculate center positions for Y and X dimensions
+        y_pos = (i_y - k_y) // 2
+        x_pos = (i_x - k_x) // 2
+        
+        # Ensure positions are non-negative (should be guaranteed by validation)
+        y_pos = max(0, y_pos)
+        x_pos = max(0, x_pos)
+        
+        # Build slices: exactly one centered Y position and one centered X position per Z
+        for z in z_steps:
+            slice_idx = (
+                slice(z, z + k_z),
+                slice(y_pos, y_pos + k_y),
+                slice(x_pos, x_pos + k_x),
+            )
+            if dataset.ndim == 4:
+                slice_idx = (slice(0, in_channels),) + slice_idx
+            slices.append(slice_idx)
+        
+        return slices
+
+
+
 def _loader_classes(class_name):
     modules = [
         'pytorch3dunet.datasets.hdf5',
