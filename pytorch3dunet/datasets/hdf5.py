@@ -310,7 +310,7 @@ class LazyDatasetWrapper:
                         padded_shape = (
                             base_shape[0] + 2 * self.auto_padding[0],  # Z
                             base_shape[1] + 2 * self.auto_padding[1],  # Y
-                            base_shape[2] + 2 * self.auto_padding[2]   # X
+                            base_shape[2] + 2 * self.auto_padding[2],  # X
                         )
                     self._shape = padded_shape
                 else:
@@ -351,7 +351,9 @@ class LazyDatasetWrapper:
 
 class FastShapeWrapper:
     """Lightweight wrapper that only provides shape info without data loading capability.
-    Used for StandardHDF5Dataset where we know data will be loaded by the dataset itself."""
+    Used for StandardHDF5Dataset where we know data will be loaded by the dataset itself.
+    """
+
     def __init__(self, file_path, internal_path, roi=None, auto_padding=None):
         self.file_path = file_path
         self.internal_path = internal_path
@@ -385,13 +387,13 @@ class FastShapeWrapper:
                         base_shape[0],
                         base_shape[1] + 2 * self.auto_padding[0],
                         base_shape[2] + 2 * self.auto_padding[1],
-                        base_shape[3] + 2 * self.auto_padding[2]
+                        base_shape[3] + 2 * self.auto_padding[2],
                     )
                 else:  # 3D case
                     self._shape = (
                         base_shape[0] + 2 * self.auto_padding[0],
                         base_shape[1] + 2 * self.auto_padding[1],
-                        base_shape[2] + 2 * self.auto_padding[2]
+                        base_shape[2] + 2 * self.auto_padding[2],
                     )
             else:
                 self._shape = base_shape
@@ -408,7 +410,9 @@ class FastShapeWrapper:
     
     def __getitem__(self, idx):
         """This should not be called for StandardHDF5Dataset since it loads data directly"""
-        raise RuntimeError("FastShapeWrapper is for shape info only. Data should be loaded by StandardHDF5Dataset.")
+        raise RuntimeError(
+            "FastShapeWrapper is for shape info only. Data should be loaded by StandardHDF5Dataset."
+        )
 
 
 class StandardHDF5Dataset(AbstractHDF5Dataset):
@@ -422,14 +426,24 @@ class StandardHDF5Dataset(AbstractHDF5Dataset):
                  global_normalization=True, global_percentiles=None):
         
         # Calculate automatic padding before calling parent constructor
-        self.auto_padding = self._calculate_auto_padding(file_path, raw_internal_path, roi, slice_builder_config)
+        self.auto_padding = self._calculate_auto_padding(
+            file_path, raw_internal_path, roi, slice_builder_config
+        )
         self._needs_padding = any(p > 0 for p in self.auto_padding)
-        
-        super().__init__(file_path=file_path, roi=roi, phase=phase, slice_builder_config=slice_builder_config,
-                         transformer_config=transformer_config, raw_internal_path=raw_internal_path,
-                         label_internal_path=label_internal_path, weight_internal_path=weight_internal_path,
-                         global_normalization=global_normalization, global_percentiles=global_percentiles,
-                         auto_padding=self.auto_padding)
+
+        super().__init__(
+            file_path=file_path,
+            roi=roi,
+            phase=phase,
+            slice_builder_config=slice_builder_config,
+            transformer_config=transformer_config,
+            raw_internal_path=raw_internal_path,
+            label_internal_path=label_internal_path,
+            weight_internal_path=weight_internal_path,
+            global_normalization=global_normalization,
+            global_percentiles=global_percentiles,
+            auto_padding=self.auto_padding,
+        )
         self._raw = None
         self._raw_padded = None
         self._label = None
@@ -437,7 +451,7 @@ class StandardHDF5Dataset(AbstractHDF5Dataset):
 
     def _calculate_auto_padding(self, file_path, raw_internal_path, roi, slice_builder_config):
         """Calculate automatic padding needed for patch extraction."""
-        patch_shape = slice_builder_config.get('patch_shape')
+        patch_shape = slice_builder_config.get("patch_shape")
         if patch_shape is None:
             return [0, 0, 0]
         
@@ -448,7 +462,11 @@ class StandardHDF5Dataset(AbstractHDF5Dataset):
                 if isinstance(roi, tuple) and all(isinstance(r, slice) for r in roi):
                     # Calculate shape for slice-based ROI
                     volume_shape = tuple(
-                        len(range(*slice_obj.indices(dim_size))) if slice_obj != slice(None) else dim_size
+                        (
+                            len(range(*slice_obj.indices(dim_size)))
+                            if slice_obj != slice(None)
+                            else dim_size
+                        )
                         for slice_obj, dim_size in zip(roi, dataset.shape)
                     )
                 elif isinstance(roi, (list, tuple)):
@@ -472,18 +490,24 @@ class StandardHDF5Dataset(AbstractHDF5Dataset):
                 current_size = vol_dim
                 total_padding = needed_size - current_size
                 # Split padding evenly on both sides (mirror_pad expects per-side padding)
-                padding_per_side = (total_padding + 1) // 2  # Round up to ensure sufficient padding
+                padding_per_side = (
+                    total_padding + 1
+                ) // 2  # Round up to ensure sufficient padding
                 padding.append(padding_per_side)
             else:
                 padding.append(0)
-        
-        logger.info(f'Auto-calculated padding: {padding} for patch_shape: {patch_shape} and volume_shape: {volume_shape}')
+
+        logger.info(
+            f"Auto-calculated padding: {padding} for patch_shape: {patch_shape} and volume_shape: {volume_shape}"
+        )
         return padding
 
     def get_raw_patch(self, idx):
         if self._raw is None:
-            with h5py.File(self.file_path, 'r') as f:
-                assert self.raw_internal_path in f, f'Dataset {self.raw_internal_path} not found in {self.file_path}'
+            with h5py.File(self.file_path, "r") as f:
+                assert (
+                    self.raw_internal_path in f
+                ), f"Dataset {self.raw_internal_path} not found in {self.file_path}"
                 if self.roi is not None:
                     raw_data = f[self.raw_internal_path][self.roi]
                 else:
@@ -514,8 +538,10 @@ class StandardHDF5Dataset(AbstractHDF5Dataset):
 
     def get_weight_patch(self, idx):
         if self._weight_map is None:
-            with h5py.File(self.file_path, 'r') as f:
-                assert self.weight_internal_path in f, f'Dataset {self.weight_internal_path} not found in {self.file_path}'
+            with h5py.File(self.file_path, "r") as f:
+                assert (
+                    self.weight_internal_path in f
+                ), f"Dataset {self.weight_internal_path} not found in {self.file_path}"
                 if self.roi is not None:
                     weight_data = f[self.weight_internal_path][self.roi]
                 else:
@@ -530,25 +556,54 @@ class StandardHDF5Dataset(AbstractHDF5Dataset):
 
     def get_raw_padded_patch(self, idx):
         if self._raw_padded is None:
-            with h5py.File(self.file_path, 'r') as f:
-                assert self.raw_internal_path in f, f'Dataset {self.raw_internal_path} not found in {self.file_path}'
-                if self.roi is not None:
-                    self._raw_padded = mirror_pad(f[self.raw_internal_path][self.roi], self.halo_shape)
-                else:
-                    self._raw_padded = mirror_pad(f[self.raw_internal_path][:], self.halo_shape)
+            # First ensure _raw is loaded with auto_padding applied
+            if self._raw is None:
+                with h5py.File(self.file_path, "r") as f:
+                    assert (
+                        self.raw_internal_path in f
+                    ), f"Dataset {self.raw_internal_path} not found in {self.file_path}"
+                    if self.roi is not None:
+                        raw_data = f[self.raw_internal_path][self.roi]
+                    else:
+                        raw_data = f[self.raw_internal_path][:]
+
+                    # Apply automatic padding once and cache
+                    if self._needs_padding:
+                        self._raw = mirror_pad(raw_data, self.auto_padding)
+                    else:
+                        self._raw = raw_data
+
+            # Now apply halo_shape padding on top of auto-padded data
+            self._raw_padded = mirror_pad(self._raw, self.halo_shape)
         return self._raw_padded[idx]
 
 
 class LazyHDF5Dataset(AbstractHDF5Dataset):
     """Implementation of the HDF5 dataset which loads the data lazily. It's slower, but has a low memory footprint."""
 
-    def __init__(self, file_path, roi, phase, slice_builder_config, transformer_config,
-                 raw_internal_path='raw', label_internal_path='label', weight_internal_path=None,
-                 global_normalization=False):
-        super().__init__(file_path=file_path, roi=roi, phase=phase, slice_builder_config=slice_builder_config,
-                         transformer_config=transformer_config, raw_internal_path=raw_internal_path,
-                         label_internal_path=label_internal_path, weight_internal_path=weight_internal_path,
-                         global_normalization=global_normalization)
+    def __init__(
+        self,
+        file_path,
+        roi,
+        phase,
+        slice_builder_config,
+        transformer_config,
+        raw_internal_path="raw",
+        label_internal_path="label",
+        weight_internal_path=None,
+        global_normalization=False,
+    ):
+        super().__init__(
+            file_path=file_path,
+            roi=roi,
+            phase=phase,
+            slice_builder_config=slice_builder_config,
+            transformer_config=transformer_config,
+            raw_internal_path=raw_internal_path,
+            label_internal_path=label_internal_path,
+            weight_internal_path=weight_internal_path,
+            global_normalization=global_normalization,
+        )
 
         logger.info("Using LazyHDF5Dataset")
 
