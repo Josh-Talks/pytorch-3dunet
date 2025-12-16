@@ -8,6 +8,7 @@ from abc import abstractmethod
 import h5py
 import imageio.v2 as imageio
 import numpy as np
+from natsort import natsorted
 from pathlib import Path
 import skimage
 import torch
@@ -526,12 +527,13 @@ class Abstract_TIF_Dataset(ConfigDataset):
             raise StopIteration
 
         img = self.images[idx]
+        print(self.paths[idx])
         if (self.phase == "eval") and (self.min_obj_size is not None) and (self.image_key == "segmentation"):
             img = skimage.morphology.remove_small_objects(
                 img, min_size=self.min_obj_size
             )
         if (self.phase == "eval") and (self.instance_zero_background==True):
-            img = zero_large_instances(img)
+            img = set_large_instances_to_zero(img)
         if self.phase != "test":
             mask = self.masks[idx]
             if self.min_obj_size is not None:
@@ -601,8 +603,10 @@ class Standard_TIF_Dataset(Abstract_TIF_Dataset):
     def _load_files(self, dir, expand_dims, key, prediction_channel=None):
         files_data = []
         paths = []
-        for file in sorted(os.listdir(dir)):
+        for file in natsorted(os.listdir(dir)):
             if not file.startswith("."):
+                if "metric_summary" in file:
+                    continue
                 path = os.path.join(dir, file)
                 if file.endswith((".tif", ".png")):
                     img = np.asarray(imageio.imread(path))
@@ -686,7 +690,9 @@ class Hoechst_Dataset(Abstract_TIF_Dataset):
     def _load_files(self, dir, expand_dims, key, prediction_channel=None):
         files_data = []
         paths = []
-        for file in sorted(os.listdir(dir)):
+        for file in natsorted(os.listdir(dir)):
+            if "metric_summary" in file:
+                    continue
             if not file.startswith("."):
                 path = os.path.join(dir, file)
                 if file.endswith((".tif", ".png")):
@@ -770,7 +776,9 @@ class HeLaNuc_Dataset(Abstract_TIF_Dataset):
     def _load_files(self, dir, expand_dims, key, prediction_channel=None):
         files_data = []
         paths = []
-        for file in sorted(os.listdir(dir)):
+        for file in natsorted(os.listdir(dir)):
+            if "metric_summary" in file:
+                    continue
             if not file.startswith("."):
                 path = os.path.join(dir, file)
                 if file.endswith((".tif", ".png")):
